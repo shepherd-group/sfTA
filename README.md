@@ -1,5 +1,5 @@
 # sfTA
-README for sfTA code developed for use with VASP CCSD calculations - TinaMihm, April 8, 2021
+README for sfTA code developed for use with VASP CCSD calculations - Tina Mihm, April 8, 2021
 
 Directory contains the following files:
  - Na32_Data.csv - Structure factor data for 100 MP2 calculations for a Na 32 electron system
