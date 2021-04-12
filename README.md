@@ -19,7 +19,7 @@ Code has been tested and run using Python 3.7.3
 
 Installation guide/Demo:
 -------------------------
-Code can be downloaded from the github repository and run right away. (Note: download times will varry) 
+Code package can be downloaded from the github repository and run right away. (Note: download times will varry) 
 The code is run using the following command: $python3 sfTA.py
 
 The following outputs are produced: 
@@ -34,7 +34,7 @@ Code should take about 20-30 seconds to run depending on data set size.
 
 Instructions for use
 --------------------------
-1. Change the line: "Data = pd.read_csv("Li-bcc/k222/BasisSetData/Nband16/Li-bcc-k222-nb16_Data.csv")" to have it read in the desired data set csv
-2. Update all paths for graphs and csv to save then to desired folder (e.g search for "Li-bcc" to locate paths in current code version - April 12, 2021) 
+1. Change the line: "Data = pd.read_csv("Na32_Data.csv")" to have it read in your desired data set csv, or use the exmaple csv given.
+2. Update all paths for graphs and csv to save then to desired folder (e.g search for "SFTA" to locate paths in current code version - April 12, 2021) 
 3. Save and run using above python command in terminal
 4. Code should run and produce graphs and csv before printing special twist angle number to screen (see above)  
