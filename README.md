@@ -17,7 +17,7 @@ The sfTA code is a python-based code that requires the following libraries to ru
 
 Code has been tested and run using Python 3.7.3
 
-Instaltation/Demo:
+Installation guide/Demo:
 -------------------------
 Code can be downloaded from the github repository and run right away. (Note: download times will varry) 
 The code is run using the following command: $python3 sfTA.py
