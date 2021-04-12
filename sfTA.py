@@ -46,7 +46,7 @@ plt.rcParams["figure.figsize"] = 3.37, (3.37)*ratio
 #   Data is rounded off to 10 decimals to ensure all floats are the same length #
 #   and to remove any trailing "0"                                              #
 #################################################################################
-Data = pd.read_csv("Li-bcc/k222/BasisSetData/Nband16/Li-bcc-k222-nb16_Data.csv")
+Data = pd.read_csv("Na32_Data.csv")
 
 Data = Data.sort_values(by = ["Twist angle Num", "G"], ascending=True)
 Data = Data.round(10)
@@ -64,7 +64,7 @@ grouped = Data.groupby('Twist angle Num')
 
 grouped_average = Data.groupby(['Twist angle Num', 'G']).mean()
 
-grouped_average.to_csv(r'Li-bcc/k222/BasisSetData/Nband16/SFTA-MP2_Averaged_over_G_Data.csv')
+grouped_average.to_csv(r'SFTA-MP2_Averaged_over_G_Data.csv')
 
 #################################################################################
 #Energies:                                                                      #
@@ -141,8 +141,9 @@ Average2 = Data.groupby(['Twist angle Num', 'G'], as_index=False).mean().groupby
 #   found using the new sums data frame and assigned the variable "Dif_min_G"   #
 #                                                                               #
 #   This variable is then used to find the python index ("SG_IN") for the twist #
-#   angle number that is designated the BasisSetData twist angle. As python indexing    #
-#   starts from "0", the special twist angle number, then, is (SG_IN + 1).      #
+#   angle number that is designated the BasisSetData twist angle. As python     #
+#   indexing starts from "0", the special twist angle number, then, is          #
+#   (SG_IN + 1)                                                                 #
 #                                                                               #
 #################################################################################
 
@@ -237,7 +238,7 @@ plt.ylabel(r'S(G)')
 plt.xlabel(r'G')
 plt.legend(loc='center', bbox_to_anchor=(0.70, 0.35), ncol=1, handlelength = 1.0, handletextpad = 0.1, columnspacing=1.0)
 
-plt.savefig('Li-bcc/k222/BasisSetData/Nband16/SFTA-MP2-SofG_vs_G-Full+Average_With_specialTwst.png',dpi = 300, bbox_inches = 'tight')
+plt.savefig('SFTA-MP2-SofG_vs_G-Full+Average_With_specialTwst.png',dpi = 300, bbox_inches = 'tight')
 
 #-------------------------------------------------
 
