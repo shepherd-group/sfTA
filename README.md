@@ -1,10 +1,11 @@
 # sfTA
-README for sfTA code developed for use with VASP CCSD calculations - Tina Mihm, April 8, 2021
+README for sfTA code developed for use with VASP CCSD calculations - Tina Mihm, July 24, 2021
 
 Directory contains the following files:
  - Na32_Data.csv - Structure factor data for 100 MP2 calculations for a Na 32 electron system
  - TwistAngles.csv - twist angles used to run the 100 MP2 calcualtions with the accociated python indexing
- - sfTA.py - Python code set up to use the Na32 strucutre factor data to obtain a special twist angle that reproduces twist averaged energies. 
+ - sfTA.py - Python code set up to use the Na32 strucutre factor data to obtain a special twist angle that reproduces twist averaged energies.
+ - utils - A folder which contains a utility script to run VASP to produce these calculations. This will only work with a future version of VASP at this time.  
 
 System requirements: 
 ------------------------
@@ -35,6 +36,6 @@ Code should take about 20-30 seconds to run depending on data set size.
 Instructions for use
 --------------------------
 1. Change the line: "Data = pd.read_csv("Na32_Data.csv")" to have it read in your desired data set csv, or use the exmaple csv given.
-2. Update all paths for graphs and csv to save then to desired folder (e.g search for "SFTA" to locate paths in current code version - April 12, 2021) 
+2. Update all paths for graphs and csv to save then to desired folder (e.g search for "SFTA" to locate paths in current code version - July 24, 2021) 
 3. Save and run using above python command in terminal
 4. Code should run and produce graphs and csv before printing special twist angle number to screen (see above)  
