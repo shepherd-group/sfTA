@@ -199,8 +199,8 @@ SF : :class:`pandas.DataFrame`
 
 
 def find_special_twist_angle(raw_SF, SF):
-    ''' Loop through the relevant files of structure factors and calculate
-        the average structure factor.
+    ''' Find the twist angle corresponding to the minimum residual
+        between the twist averaged S_G and a given S_G.
 
 Parameters
 ----------
