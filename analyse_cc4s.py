@@ -15,7 +15,6 @@ More details can be found in: https://doi.org/10.1038/s43588-021-00165-1
 import os
 import sys
 import time
-import math
 import argparse
 import numpy as np
 import pandas as pd
@@ -217,7 +216,7 @@ special_twist_index : integer
     matches the various lists used throughout.
 '''
     residuals = []
-    for i, SFi in enumerate(raw_SF):
+    for SFi in raw_SF:
         residuals.append(np.power(np.abs(SF['S_G'] - SFi['S_G']), 2).sum())
 
     special_twist_index = np.argmin(residuals)
