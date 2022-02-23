@@ -183,16 +183,15 @@ SF : :class:`pandas.DataFrame`
     A data frame of the average structure factor.
 '''
     raw_SF = []
-    for i, files in enumerate(zip(Gvector_files, Coulomb_files, S_G_files)):
+    for files in zip(Gvector_files, Coulomb_files, S_G_files):
         G = read_and_generate_Gvector_magnitudes(files[0])
         V_G = read_Vg(files[1])
         S_G = read_Sg(files[2])
-        Gi = np.arange(G.shape[0])
-        SFi = pd.DataFrame({'Gi':Gi, 'G':G, 'V_G':V_G, 'S_G':S_G})
+        SFi = pd.DataFrame({'G':G.round(10), 'V_G':V_G, 'S_G':S_G})
         raw_SF.append(SFi)
 
-    group = pd.concat(raw_SF).groupby('Gi')
-    SF = group.mean().reset_index(drop=True)
+    group = pd.concat(raw_SF).groupby('G', as_index=False)
+    SF = group.mean()
     SF[['G_error', 'V_G_error', 'S_G_error']] = group.sem()[['G', 'V_G', 'S_G']]
 
     return raw_SF, SF
@@ -217,7 +216,13 @@ special_twist_index : integer
 '''
     residuals = []
     for SFi in raw_SF:
-        residuals.append(np.power(np.abs(SF['S_G'] - SFi['S_G']), 2).sum())
+        aSFi = SFi.groupby('G', as_index=False).mean()
+        residuals.append(np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2).sum())
+
+        if not np.array_equal(aSFi['G'], SF['G']):
+            raise ValueError('G value arrays are not equivlent between'+\
+                                'the average SF and an individual SF.'+\
+                                'This should not happen!')
 
     special_twist_index = np.argmin(residuals)
 
