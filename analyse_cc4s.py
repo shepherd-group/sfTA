@@ -35,7 +35,7 @@ class ScriptTimer(object):
 
     @classmethod
     def report(self, msg):
-        ''' Report time and msg to standard out '''
+        ''' Report time and msg to standard error to be non-intrusive '''
         print(f'\n {msg}: {self.ttotal:>9.6f} (minutes)\n', file=sys.stderr)
     @classmethod
     def start(self):
@@ -392,6 +392,8 @@ None.
         if options.emp2:
             print(mp2_df.to_string(index=False, float_format='%18.16f'))
         if options.wemp2 is not None:
+            if '.csv' not in options.wemp2: options.wemp2 += '.csv'
+            print(f' Saving MP2 energies to: {options.wemp2}')
             mp2_df.to_csv(options.wemp2, index=False)
 
     if options.skip:
