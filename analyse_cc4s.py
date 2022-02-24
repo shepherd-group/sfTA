@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 '''analyse_cc4s.py [options] directory_1 directory_2 ... directory_N
 
-Perform sFTA on a list of user provided directories which 
+Perform sFTA on a list of user provided directories which
 contain cc4s structure factor outputs `GridVectors.elements`,
 `CoulombPotential.elements`, and `SF.elements`.
 
-The final report provides the directory for the structure factor 
-data which minimizes the residual of the difference between the 
+The final report provides the directory for the structure factor
+data which minimizes the residual of the difference between the
 average structure factor and the given individual structure factor.
 
 More details can be found in: https://doi.org/10.1038/s43588-021-00165-1
@@ -37,16 +37,19 @@ class ScriptTimer(object):
     def report(self, msg):
         ''' Report time and msg to standard error to be non-intrusive '''
         print(f'\n {msg}: {self.ttotal:>9.6f} (minutes)\n', file=sys.stderr)
+
     @classmethod
     def start(self):
         ''' Initialize the timer instance.'''
         self.tstart = time.perf_counter()
+
     @classmethod
     def stop(self):
         ''' Calculate the total time in minutes, and report'''
         self.tcurre = time.perf_counter()
         self.ttotal = (self.tcurre - self.tstart)/60.0
         self.report('Script execution time')
+
     @classmethod
     def lap(self, msg='Time for lap'):
         ''' Calculate an intemediate time in minutes, and report'''
@@ -70,7 +73,7 @@ directories : list of strings
 options : :class:`ArgumentParser`
     User options read in from the command-line.
 '''
-    parser = argparse.ArgumentParser(usage = __doc__)
+    parser = argparse.ArgumentParser(usage=__doc__)
     parser.add_argument('-w', '--write', action='store', default=None,
                         type=str, dest='write', help='A file to write the '
                         'individual structure factor data, in a format '
@@ -108,6 +111,7 @@ yaml_log_files : list of strings
     A list of the yaml log files with energy data.
 '''
     yaml_log_files = []
+
     for path in directories:
         yaml_log_file = f'{path}/cc4s.out.yaml'
 
@@ -120,7 +124,7 @@ yaml_log_files : list of strings
 
 
 def get_yaml_as_dict(yaml_file):
-    ''' Read in the yaml file `cc4s.log.yaml` from a cc4s calculation 
+    ''' Read in the yaml file `cc4s.log.yaml` from a cc4s calculation
         and return the information as a dictionary.
 
 Parameters
@@ -135,6 +139,7 @@ yaml_dict : :class:`dictionary`
 '''
     with open(yaml_file, 'r') as yaml_stream:
         yaml_dict = yaml.safe_load(yaml_stream)
+
     return yaml_dict
 
 
@@ -152,7 +157,7 @@ Returns
 mp2_df : :class:`pandas.DataFrame`
     A pandas Data Frame of all the MP2 energies from the twist angles
 '''
-    mp2_df = {'Twist':[], 'Ecorr':[], 'Ecorr+FS':[]}
+    mp2_df = {'Twist': [], 'Ecorr': [], 'Ecorr+FS': []}
 
     for imp2, yaml_file in enumerate(yaml_log_files):
         yaml_dict = get_yaml_as_dict(yaml_file)
@@ -188,6 +193,7 @@ S_G_files : list of strings
     A list of files with the S_G data.
 '''
     Gvector_files, Coulomb_files, S_G_files = [], [], []
+
     for path in directories:
         Gvector_file = f'{path}/GridVectors.elements'
         Coulomb_file = f'{path}/CoulombPotential.elements'
@@ -286,16 +292,18 @@ SF : :class:`pandas.DataFrame`
     A data frame of the average structure factor.
 '''
     raw_SF = []
+
     for files in zip(Gvector_files, Coulomb_files, S_G_files):
         G = read_and_generate_Gvector_magnitudes(files[0])
         V_G = read_Vg(files[1])
         S_G = read_Sg(files[2])
-        SFi = pd.DataFrame({'G':G.round(10), 'V_G':V_G, 'S_G':S_G})
+        SFi = pd.DataFrame({'G': G.round(10), 'V_G': V_G, 'S_G': S_G})
         raw_SF.append(SFi)
 
     group = pd.concat(raw_SF).groupby('G', as_index=False)
     SF = group.mean()
-    SF[['G_error', 'V_G_error', 'S_G_error']] = group.sem()[['G', 'V_G', 'S_G']]
+    cols = ['G', 'V_G', 'S_G']
+    SF[[c + '_error' for c in cols]] = group.sem()[cols]
 
     return raw_SF, SF
 
@@ -318,14 +326,15 @@ special_twist_index : integer
     matches the various lists used throughout.
 '''
     residuals = []
+
     for SFi in raw_SF:
         aSFi = SFi.groupby('G', as_index=False).mean()
         residuals.append(np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2).sum())
 
         if not np.array_equal(aSFi['G'], SF['G']):
-            raise ValueError('G value arrays are not equivlent between'+\
-                                'the average SF and an individual SF.'+\
-                                'This should not happen!')
+            raise ValueError('G value arrays are not equivlent between'
+                             'the average SF and an individual SF.'
+                             'This should not happen!')
 
     special_twist_index = np.argmin(residuals)
 
@@ -354,10 +363,10 @@ None.
 
     csv_twist = csv_file.replace('.csv', '_Twist_angle_Num_map.csv')
 
-    csv_SF, csv_mp = [], {'Twist angle Num':[], 'directory':[]}
+    csv_SF, csv_mp = [], {'Twist angle Num': [], 'directory': []}
     for i, (SFi, directory) in enumerate(zip(raw_SF, directories)):
         itwist = np.repeat(i+1, SFi['G'].shape[0])
-        oSFi = pd.DataFrame({'Twist angle Num':itwist})
+        oSFi = pd.DataFrame({'Twist angle Num': itwist})
         oSFi[['G', 'V_G', 'S_G']] = SFi[['G', 'V_G', 'S_G']]
         csv_SF.append(oSFi.sort_values(by='G').reset_index(drop=True))
 
@@ -391,8 +400,11 @@ None.
 
         if options.emp2:
             print(mp2_df.to_string(index=False, float_format='%18.16f'))
+
         if options.wemp2 is not None:
-            if '.csv' not in options.wemp2: options.wemp2 += '.csv'
+            if '.csv' not in options.wemp2:
+                options.wemp2 += '.csv'
+
             print(f' Saving MP2 energies to: {options.wemp2}')
             mp2_df.to_csv(options.wemp2, index=False)
 
@@ -408,7 +420,7 @@ None.
     if options.write is not None:
         write_sfTA_csv(options.write, directories, raw_SF)
 
-    print(f'\n Found Special Twist Angle:')
+    print('\n Found Special Twist Angle:')
     print(f' {directories[special_twist_index]}\n')
 
 
