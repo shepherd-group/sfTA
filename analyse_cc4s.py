@@ -15,26 +15,44 @@ More details can be found in: https://doi.org/10.1038/s43588-021-00165-1
 import os
 import sys
 import time
+import yaml
 import argparse
 import numpy as np
 import pandas as pd
 
 
-class AnalysisTimer:
-    ''' A simple timer for the analysis script.'''
-    def __init__(self):
-        ''' Initialize the timer instance.
+class ScriptTimer(object):
+    ''' A simple timer for the analysis script.
 
-        Parameters
-        ----------
-        None.
-        '''
-        self.initial_time = time.perf_counter()
-    def end(self):
+    Parameters
+    ----------
+    None.
+'''
+    tstart = None
+    tfinal = None
+    ttotal = None
+    tcurre = None
+
+    @classmethod
+    def report(self, msg):
+        ''' Report time and msg to standard out '''
+        print(f'\n {msg}: {self.ttotal:>9.6f} (minutes)\n', file=sys.stderr)
+    @classmethod
+    def start(self):
+        ''' Initialize the timer instance.'''
+        self.tstart = time.perf_counter()
+    @classmethod
+    def stop(self):
         ''' Calculate the total time in minutes, and report'''
-        self.final_time = time.perf_counter()
-        self.total_time = (self.final_time - self.initial_time)/60.0
-        print(f' Script execution time: {self.total_time:>8.4f} (minutes)')
+        self.tcurre = time.perf_counter()
+        self.ttotal = (self.tcurre - self.tstart)/60.0
+        self.report('Script execution time')
+    @classmethod
+    def lap(self, msg='Time for lap'):
+        ''' Calculate an intemediate time in minutes, and report'''
+        self.tcurre = time.perf_counter()
+        self.ttotal = (self.tcurre - self.tstart)/60.0
+        self.report(msg)
 
 
 def parse_command_line_arguments(arguments):
@@ -57,6 +75,15 @@ options : :class:`ArgumentParser`
                         type=str, dest='write', help='A file to write the '
                         'individual structure factor data, in a format '
                         'ammendable to the sfTA.py script.')
+    parser.add_argument('-ew', '--mp2-write', action='store', default=None,
+                        type=str, dest='wemp2', help='A file to write the '
+                        'MP2 energies to from the individual calculations.')
+    parser.add_argument('-e', '--pull-emp2', action='store_true',
+                        default=False, dest='emp2', help='Pull the MP2 '
+                        'energies and print out as a table.')
+    parser.add_argument('-s', '--skip-sfta', action='store_true',
+                        default=False, dest='skip', help='Skip all forms '
+                        'of sfTA analysis.')
     parser.add_argument('directories', nargs='+', help='Paths containing '
                         'Structure Factor data to be analyzed.')
     parser.parse_args(args=None if arguments else ['--help'])
@@ -66,9 +93,85 @@ options : :class:`ArgumentParser`
     return options.directories, options
 
 
+def find_yaml_logs(directories):
+    ''' Search through the user provided directories and find the
+        relevant yaml log files of energy data.
+
+Parameters:
+----------
+directories : list of strings
+    The directories where structure factor data is contained.
+
+Returns
+-------
+yaml_log_files : list of strings
+    A list of the yaml log files with energy data.
+'''
+    yaml_log_files = []
+    for path in directories:
+        yaml_log_file = f'{path}/cc4s.out.yaml'
+
+        if not os.path.isfile(yaml_log_file):
+            raise ValueError(f'{yaml_log_file} does not exist!')
+        else:
+            yaml_log_files.append(yaml_log_file)
+
+    return yaml_log_files
+
+
+def get_yaml_as_dict(yaml_file):
+    ''' Read in the yaml file `cc4s.log.yaml` from a cc4s calculation 
+        and return the information as a dictionary.
+
+Parameters
+----------
+yaml_file : str
+    A string of a yaml file to read in.
+
+Returns
+-------
+yaml_dict : :class:`dictionary`
+    A dictionary of the cc4s data.
+'''
+    with open(yaml_file, 'r') as yaml_stream:
+        yaml_dict = yaml.safe_load(yaml_stream)
+    return yaml_dict
+
+
+def extract_mp2_from_yaml(yaml_log_files):
+    ''' Collect the data yaml log files and return the relevent
+        energy data.
+
+Parameters
+----------
+yaml_log_files : list of strings
+    A list of the yaml log files with energy data.
+
+Returns
+-------
+mp2_df : :class:`pandas.DataFrame`
+    A pandas Data Frame of all the MP2 energies from the twist angles
+'''
+    mp2_df = {'Twist':[], 'Ecorr':[], 'Ecorr+FS':[]}
+
+    for imp2, yaml_file in enumerate(yaml_log_files):
+        yaml_dict = get_yaml_as_dict(yaml_file)
+
+        ec = yaml_dict['steps'][8]['out']['energy']['correlation']
+        fs = yaml_dict['steps'][9]['out']['energy']['corrected']
+
+        mp2_df['Twist'].append(imp2+1)
+        mp2_df['Ecorr'].append(ec)
+        mp2_df['Ecorr+FS'].append(fs)
+
+    mp2_df = pd.DataFrame(mp2_df)
+
+    return mp2_df
+
+
 def find_SF_outputs(directories):
-    ''' Search through the user provided directories and find the relevenant
-        outputs for sFTA.
+    ''' Search through the user provided directories and find the
+        relevenant outputs for sFTA.
 
 Parameters
 ----------
@@ -281,6 +384,19 @@ None.
 '''
     directories, options = parse_command_line_arguments(arguments)
 
+    if options.emp2 or options.wemp2 is not None:
+        yaml_log_files = find_yaml_logs(directories)
+
+        mp2_df = extract_mp2_from_yaml(yaml_log_files)
+
+        if options.emp2:
+            print(mp2_df.to_string(index=False, float_format='%18.16f'))
+        if options.wemp2 is not None:
+            mp2_df.to_csv(options.wemp2, index=False)
+
+    if options.skip:
+        return
+
     Gvector_files, Coulomb_files, S_G_files = find_SF_outputs(directories)
 
     raw_SF, SF = read_and_average_SF(Gvector_files, Coulomb_files, S_G_files)
@@ -295,6 +411,6 @@ None.
 
 
 if __name__ == '__main__':
-    timer = AnalysisTimer()
+    ScriptTimer.start()
     main(sys.argv[1:])
-    timer.end()
+    ScriptTimer.stop()
