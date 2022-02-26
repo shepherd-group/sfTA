@@ -28,44 +28,26 @@ class ScriptTimer:
 
     Attributes
     ----------
-    tstart : float
+    start : float
         The start time set when the timer is initalized
-    tcurre : float
+    current : float
         The final time when the lap or stop methods are called
-    ttotal : float
-        The time between tstart and tcurre, updated by lap or stop
-
-    Methods
-    -------
-    start():
-        A classmethod to initalize the timer and set tstart
-    lap(msg="Time for lap"):
-        A classmethod for reporting the timing informawtion
-    stop():
-        A classmethod for ending the timer
+    total : float
+        The time between start and current, updated by lap or stop
     '''
-    tstart = None
-    tcurre = None
-    ttotal = None
-
     def __report(self, msg):
-        ''' Report time and msg to standard error to be non-intrusive '''
-        print(f'\n {msg}: {self.ttotal:>9.6f} (minutes)\n', file=sys.stderr)
+        ''' Private method to report time and msg in a non-intrusive way '''
+        print(f'\n {msg}: {self.total:>9.6f} (minutes)\n', file=sys.stderr)
 
-    @staticmethod
-    def __gctm():
-        ''' Private static method to use the time library '''
-        return time.perf_counter()
-
-    def __tupdate(self):
+    def __update(self):
         ''' Private method to update the time '''
-        self.tcurre = self.__gctm()
-        self.ttotal = (self.tcurre - self.tstart)/60.0
+        self.current = time.perf_counter()
+        self.total = (self.current - self.start)/60.0
 
     @classmethod
     def start(cls):
         ''' Initialize the timer instance. '''
-        cls.tstart = cls.__gctm()
+        cls.start = time.perf_counter()
 
     @classmethod
     def lap(cls, msg='Time for lap'):
@@ -80,7 +62,7 @@ class ScriptTimer:
         -------
         None.
         '''
-        cls.__tupdate(cls)
+        cls.__update(cls)
         cls.__report(cls, msg)
 
     @classmethod
@@ -165,7 +147,7 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
     structure factor and the special twist. Or the variance of the average
     structure factor. Both can also occur at the same time.
 
-    Parameters:
+    Parameters
     ----------
     sfta_plot : str
         A string for the structure factor plot name, default is None in
@@ -274,7 +256,7 @@ def find_yaml_outs(directories):
     ''' Search through the user provided directories and find the
     relevant yaml energy out files containing energy data.
 
-    Parameters:
+    Parameters
     ----------
     directories : list of strings
         The directories where structure factor data is contained.
