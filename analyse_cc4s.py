@@ -143,7 +143,7 @@ def parse_command_line_arguments(arguments):
     options = parser.parse_args(arguments)
 
     def __ext_filename_check(filename, ext):
-        ''' A function to ensure user provided
+        ''' A private function to ensure user provided
         filenames have the corresponding extension.
         '''
         if filename is not None and ext not in filename:
@@ -174,7 +174,7 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
         A string for the plot of the variance for the average structure
         factor. Default is None in which case no plot is created.
     raw_SF : list of :class:`pandas.DataFrame`
-        A pandas data frame of all structure factors concatenated together.
+        A list of all the structure factors.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
     ispecial : integer
@@ -461,7 +461,7 @@ def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
     Returns
     -------
     raw_SF : list of :class:`pandas.DataFrame`
-        A pandas data frame of all structure factors concatenated together.
+        A list of all the structure factors.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
     '''
@@ -489,7 +489,7 @@ def find_special_twist_angle(raw_SF, SF):
     Parameters
     ----------
     raw_SF : list of :class:`pandas.DataFrame`
-        A pandas data frame of all structure factors concatenated together.
+        A list of all the structure factors.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
 
@@ -526,7 +526,7 @@ def write_sfTA_csv(csv_file, directories, raw_SF):
     directories : list of strings
         The directories where structure factor data is contained.
     raw_SF : list of :class:`pandas.DataFrame`
-        A pandas data frame of all structure factors concatenated together.
+        A list of all the structure factors.
 
     Returns
     -------
