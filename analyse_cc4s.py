@@ -111,10 +111,10 @@ def parse_command_line_arguments(arguments):
                         'average structure factor for the G values.')
     parser.add_argument('-a', '--average', action='store_true', default=False,
                         dest='average', help='Print out the average structure '
-                        'factor in a nice table to the standard output.')
+                        'factor in a nice table to the standard error output.')
     parser.add_argument('-e', '--mp2', action='store_true', default=False,
                         dest='mp2', help='Pull the MP2 energies and print out '
-                        'as a table to the standard output.')
+                        'as a table to the standard error output.')
     parser.add_argument('-s', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
