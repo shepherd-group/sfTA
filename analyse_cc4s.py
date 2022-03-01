@@ -92,6 +92,11 @@ def parse_command_line_arguments(arguments):
                         'to store the average structure factor data in. '
                         'The data format is csv, and the file flag is '
                         'automatically included.')
+    parser.add_argument('-iw', '--individual-write', action='store',
+                        default=None, type=str, dest='single_write',
+                        help='A file name to write the average individual '
+                        'structure factors, i.e. the S(G), V(G) averaged '
+                        'over the common G within a single calculation.')
     parser.add_argument('-ew', '--mp2-write', action='store', default=None,
                         type=str, dest='mp2_write', help='A file to write the '
                         'MP2 energies to from the individual calculations.')
@@ -133,6 +138,7 @@ def parse_command_line_arguments(arguments):
         return filename
 
     options.average_write = __ext_filename_check(options.average_write, '.csv')
+    options.single_write = __ext_filename_check(options.single_write, '.csv')
     options.mp2_write = __ext_filename_check(options.mp2_write, '.csv')
     options.legacy_write = __ext_filename_check(options.legacy_write, '.csv')
     options.sfta_plot = __ext_filename_check(options.sfta_plot, '.png')
@@ -532,6 +538,37 @@ def write_sfTA_csv(csv_file, directories, raw_SF):
     pd.DataFrame(csv_mp).to_csv(csv_twist, index=False)
 
 
+def write_individual_twist_average_csv(single_write, raw_SF):
+    ''' Write out the average of the individual twist angles to a csv file.
+
+    Parameters
+    ----------
+    single_write : str
+        A user provided name to save the data to.
+    raw_SF : list of :class:`pandas.DataFrame`
+        A list of all the structure factors.
+
+    Returns
+    -------
+    None.
+    '''
+    individual_averages = []
+
+    for i, SFi in enumerate(raw_SF):
+        itwist = np.repeat(i+1, np.unique(SFi['G']).shape[0])
+        aSFi = pd.DataFrame({'Twist angle Num': itwist})
+
+        group = SFi.groupby('G', as_index=False)
+        aSFi[['G', 'V_G', 'S_G']] = group.mean()[['G', 'V_G', 'S_G']]
+        aSFi[['V_G_error', 'S_G_error']] = group.sem()[['V_G', 'S_G']]
+
+        aSFi = aSFi.sort_values('G').reset_index(drop=True)
+        individual_averages.append(aSFi)
+
+    pd.concat(individual_averages).to_csv(single_write, index=False)
+    print(f' Saving individual averages to: {single_write}', file=sys.stderr)
+
+
 def main(arguments):
     ''' Run structure factor twist averaging on cc4s outputs.
 
@@ -579,6 +616,9 @@ def main(arguments):
         msg = f' Saving average structure factor to: {options.average_write}'
         print(msg, file=sys.stderr)
         SF.to_csv(options.average_write, index=False)
+
+    if options.single_write is not None:
+        write_individual_twist_average_csv(options.single_write, raw_SF)
 
     if options.sfta_plot is not None or options.variance_plot is not None:
         plot_SF(options.sfta_plot, options.variance_plot, raw_SF, SF, ispecial)
