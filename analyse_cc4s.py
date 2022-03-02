@@ -464,8 +464,7 @@ def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
 
     group = pd.concat(raw_SF).groupby('G', as_index=False)
     SF = group.mean()
-    cols = ['V_G', 'S_G']
-    SF[[c + '_error' for c in cols]] = group.sem()[cols]
+    SF[['V_G_error', 'S_G_error']] = group.sem()[['V_G', 'S_G']]
 
     return raw_SF, SF
 
@@ -559,7 +558,7 @@ def write_individual_twist_average_csv(single_write, raw_SF):
         aSFi = pd.DataFrame({'Twist angle Num': itwist})
 
         group = SFi.groupby('G', as_index=False)
-        aSFi[['G', 'V_G', 'S_G']] = group.mean()[['G', 'V_G', 'S_G']]
+        aSFi = group.mean()
         aSFi[['V_G_error', 'S_G_error']] = group.sem()[['V_G', 'S_G']]
 
         aSFi = aSFi.sort_values('G').reset_index(drop=True)
@@ -582,6 +581,9 @@ def main(arguments):
     None.
     '''
     directories, options = parse_command_line_arguments(arguments)
+
+    if np.unique(directories).shape[0] != len(directories):
+        raise ValueError('Repeated directories found!')
 
     if options.mp2 or options.mp2_write is not None:
         yaml_out_files = find_yaml_outs(directories)
