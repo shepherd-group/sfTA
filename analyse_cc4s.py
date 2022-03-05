@@ -319,19 +319,51 @@ def extract_mp2_from_yaml(yaml_out_files):
     mp2_df : :class:`pandas.DataFrame`
         A pandas Data Frame of all the MP2 energies from the twist angles
     '''
-    mp2_df = {'Twist': [], 'Ecorr': [], 'Ecorr+FS': []}
+    def __ekey_check(cstep, nkey, ekey):
+        ''' A private function to check the yaml for an energy key '''
+        iskey = False
+
+        if cstep['name'] == nkey:
+            if 'out' in cstep.keys() and 'energy' in cstep['out'].keys():
+                iskey = ekey in cstep['out']['energy'].keys()
+
+        return iskey
+
+    mp2_df = {'Twist': []}
 
     for imp2, yaml_file in enumerate(yaml_out_files):
-        yaml_dict = get_yaml_as_dict(yaml_file)
-
-        ec = yaml_dict['steps'][8]['out']['energy']['correlation']
-        fs = yaml_dict['steps'][9]['out']['energy']['corrected']
+        steps = get_yaml_as_dict(yaml_file)['steps'].values()
 
         mp2_df['Twist'].append(imp2+1)
-        mp2_df['Ecorr'].append(ec)
-        mp2_df['Ecorr+FS'].append(fs)
+
+        for step in steps:
+            if __ekey_check(step, 'CoupledCluster', 'correlation'):
+                if imp2 == 0:
+                    mp2_df['Ec'], mp2_df['Ed'], mp2_df['Ex'] = [], [], []
+
+                mp2_df['Ec'].append(step['out']['energy']['correlation'])
+                mp2_df['Ed'].append(step['out']['energy']['direct'])
+                mp2_df['Ex'].append(step['out']['energy']['exchange'])
+
+            if __ekey_check(step, 'FiniteSizeCorrection', 'correction'):
+                if imp2 == 0:
+                    mp2_df['FSC'] = []
+
+                mp2_df['FSC'].append(step['out']['energy']['correction'])
+
+            if __ekey_check(step, 'BasisSetCorrection', 'correction'):
+                if imp2 == 0:
+                    mp2_df['BSC'] = []
+
+                mp2_df['BSC'].append(step['out']['energy']['correction'])
+
+    if any(len(v) != len(yaml_out_files) for k, v in mp2_df.items()):
+        raise ValueError('cc4s yaml log files are missing data!')
 
     mp2_df = pd.DataFrame(mp2_df)
+
+    if all(col in mp2_df.columns for col in ['Ec', 'FSC', 'BSC']):
+        mp2_df['Ec+FSC+BSC'] = mp2_df['Ec'] + mp2_df['FSC'] + mp2_df['BSC']
 
     return mp2_df
 
