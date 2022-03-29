@@ -584,7 +584,7 @@ def find_special_twist_angle(raw_SF, SF):
     ------
     RuntimeError
         When the average and individual structure factor data sets
-        have a different shape.
+        have different G values.
     '''
     residuals = []
 
