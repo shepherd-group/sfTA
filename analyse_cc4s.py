@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import yaml
+import warnings
 import argparse
 import numpy as np
 import pandas as pd
@@ -258,6 +259,51 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
         plt.savefig(variance_plot, bbox_inches='tight')
 
 
+def clean_paths_and_simple_checks(directories):
+    ''' Perform some simple pre checks on the user provided directories.
+
+    Parameters
+    ----------
+    directories : list of strings
+        The directories where structure factor data is contained.
+
+    Returns
+    -------
+    cleaned_directories : list of strings
+        The directories list with files removed from the list, leaving
+        only directories.
+
+    Raises
+    ------
+    UserWarning
+        When there are files within the directories list.
+    UserWarning
+        When there are not 100 paths.
+    RuntimeError
+        When a directory is found to occur multiple times in directories.
+    '''
+    cleaned_directories = []
+    removed_paths = '\n'
+    for path in directories:
+        if os.path.isdir(path):
+            cleaned_directories.append(path)
+        else:
+            removed_paths += path + '\n'
+
+    if len(cleaned_directories) != len(directories):
+        warnings.warn(f'\nNon-directory paths provided: {removed_paths}'
+                      'These are removed!\n', stacklevel=2)
+
+    if len(cleaned_directories) != 100:
+        warnings.warn(f'\nThere are {len(cleaned_directories)},'
+                      ' not 100 calculations!\n', stacklevel=2)
+
+    if np.unique(directories).shape[0] != len(directories):
+        raise RuntimeError('Repeated directories found!')
+
+    return cleaned_directories
+
+
 def find_yaml_outs(directories):
     ''' Search through the user provided directories and find the
     relevant yaml energy out files containing energy data.
@@ -271,6 +317,11 @@ def find_yaml_outs(directories):
     -------
     yaml_out_files : list of strings
         A list of the yaml log files with energy data.
+
+    Raises
+    ------
+    RuntimeError
+        When a cc4s yaml output file is absent from a directory.
     '''
     yaml_out_files = []
 
@@ -278,7 +329,7 @@ def find_yaml_outs(directories):
         yaml_out_file = f'{path}/cc4s.out.yaml'
 
         if not os.path.isfile(yaml_out_file):
-            raise ValueError(f'{yaml_out_file} does not exist!')
+            raise RuntimeError(f'{yaml_out_file} does not exist!')
         else:
             yaml_out_files.append(yaml_out_file)
 
@@ -318,6 +369,11 @@ def extract_mp2_from_yaml(yaml_out_files):
     -------
     mp2_df : :class:`pandas.DataFrame`
         A pandas Data Frame of all the MP2 energies from the twist angles
+
+    Raises
+    ------
+    RuntimeError
+        When a cc4s yaml logfile is absent from a directory.
     '''
     def __ekey_check(cstep, nkey, ekey):
         ''' A private function to check the yaml for an energy key '''
@@ -358,7 +414,7 @@ def extract_mp2_from_yaml(yaml_out_files):
                 mp2_df['BSC'].append(step['out']['energy']['correction'])
 
     if any(len(v) != len(yaml_out_files) for k, v in mp2_df.items()):
-        raise ValueError('cc4s yaml log files are missing data!')
+        raise RuntimeError('cc4s yaml log files are missing data!')
 
     mp2_df = pd.DataFrame(mp2_df)
 
@@ -385,6 +441,12 @@ def find_SF_outputs(directories):
         A list of files with the Coulomb potential data.
     S_G_files : list of strings
         A list of files with the S_G data.
+
+    Raises
+    ------
+    RuntimeError
+        When one of the GridVectors.elements, CoulombPotential.elements or
+        SF.elements is absent from a directory.
     '''
     Gvector_files, Coulomb_files, S_G_files = [], [], []
 
@@ -394,11 +456,11 @@ def find_SF_outputs(directories):
         S_G_file = f'{path}/SF.elements'
 
         if not os.path.isfile(Gvector_file):
-            raise ValueError(f'{Gvector_file} does not exist!')
+            raise RuntimeError(f'{Gvector_file} does not exist!')
         elif not os.path.isfile(Coulomb_file):
-            raise ValueError(f'{Coulomb_file} does not exist!')
+            raise RuntimeError(f'{Coulomb_file} does not exist!')
         elif not os.path.isfile(S_G_file):
-            raise ValueError(f'{S_G_file} does not exist!')
+            raise RuntimeError(f'{S_G_file} does not exist!')
         else:
             Gvector_files.append(Gvector_file)
             Coulomb_files.append(Coulomb_file)
@@ -517,6 +579,12 @@ def find_special_twist_angle(raw_SF, SF):
     ispecial : integer
         The index of the special twist angle. The index is pythonic and
         matches the various lists used throughout.
+
+    Raises
+    ------
+    RuntimeError
+        When the average and individual structure factor data sets
+        have a different shape.
     '''
     residuals = []
 
@@ -525,9 +593,9 @@ def find_special_twist_angle(raw_SF, SF):
         residuals.append(np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2).sum())
 
         if not np.array_equal(aSFi['G'], SF['G']):
-            raise ValueError('G value arrays are not equivlent between'
-                             'the average SF and an individual SF.'
-                             'This should not happen!')
+            raise RuntimeError('G value arrays are not equivlent between'
+                               'the average SF and an individual SF.'
+                               'This should not happen!')
 
     ispecial = np.argmin(residuals)
 
@@ -614,8 +682,7 @@ def main(arguments):
     '''
     directories, options = parse_command_line_arguments(arguments)
 
-    if np.unique(directories).shape[0] != len(directories):
-        raise ValueError('Repeated directories found!')
+    directories = clean_paths_and_simple_checks(directories)
 
     if options.mp2 or options.mp2_write is not None:
         yaml_out_files = find_yaml_outs(directories)
