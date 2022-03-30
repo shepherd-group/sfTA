@@ -224,6 +224,8 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
         plt.xlabel('G')
         plt.ylabel('S(G)')
         plt.legend(loc='best', ncol=1, handlelength=1.0, handletextpad=0.1)
+        print(' Saving structure factor plot to: '
+              f'{sfta_plot}', file=sys.stderr)
         plt.savefig(sfta_plot, bbox_inches='tight')
 
     if variance_plot is not None:
@@ -256,7 +258,7 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
         plt.xlabel('G')
         plt.ylabel('S(G) Variance')
         plt.legend(loc='best', ncol=1)
-        print(' Saving structure factor plot to: '
+        print(' Saving structure factor variance plot to: '
               f'{variance_plot}', file=sys.stderr)
         plt.savefig(variance_plot, bbox_inches='tight')
 
