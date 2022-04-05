@@ -733,14 +733,15 @@ def main(arguments):
     if options.sfta_plot is not None or options.variance_plot is not None:
         plot_SF(options.sfta_plot, options.variance_plot, raw_SF, SF, ispecial)
 
-    print('\n Found Special Twist Angle:', file=sys.stderr)
-    print(f' {directories[ispecial]}\n', file=sys.stderr)
-
     if options.special_write is not None:
         msg = ' Saving special twist angle structure factor to:'
         print(msg+f' {options.special_write}', file=sys.stderr)
         special = raw_SF[ispecial].groupby('G', as_index=False).mean()
         special.to_csv(options.special_write, index=False)
+
+    print('\n Found Special Twist Angle:', file=sys.stderr)
+    print(f' {directories[ispecial]}\n', file=sys.stderr)
+
 
 if __name__ == '__main__':
     ScriptTimer.start()
