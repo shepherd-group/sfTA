@@ -93,6 +93,10 @@ def parse_command_line_arguments(arguments):
                         'to store the average structure factor data in. '
                         'The data format is csv, and the file flag is '
                         'automatically included.')
+    parser.add_argument('-sw', '--special-write', action='store', default=None,
+                        type=str, dest='special_write', help='Provide a file '
+                        'to store the special twist angles structure factor '
+                        'data to. The data format is csv.')
     parser.add_argument('-iw', '--individual-write', action='store',
                         default=None, type=str, dest='single_write',
                         help='A file name to write the average individual '
@@ -139,6 +143,7 @@ def parse_command_line_arguments(arguments):
         return filename
 
     options.average_write = __ext_filename_check(options.average_write, '.csv')
+    options.special_write = __ext_filename_check(options.special_write, '.csv')
     options.single_write = __ext_filename_check(options.single_write, '.csv')
     options.mp2_write = __ext_filename_check(options.mp2_write, '.csv')
     options.legacy_write = __ext_filename_check(options.legacy_write, '.csv')
@@ -731,6 +736,11 @@ def main(arguments):
     print('\n Found Special Twist Angle:', file=sys.stderr)
     print(f' {directories[ispecial]}\n', file=sys.stderr)
 
+    if options.special_write is not None:
+        msg = ' Saving special twist angle structure factor to:'
+        print(msg+f' {options.special_write}', file=sys.stderr)
+        special = raw_SF[ispecial].groupby('G', as_index=False).mean()
+        special.to_csv(options.special_write, index=False)
 
 if __name__ == '__main__':
     ScriptTimer.start()
