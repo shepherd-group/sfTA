@@ -737,6 +737,8 @@ def main(arguments):
         msg = ' Saving special twist angle structure factor to:'
         print(msg+f' {options.special_write}', file=sys.stderr)
         special = raw_SF[ispecial].groupby('G', as_index=False).mean()
+        error = raw_SF[ispecial].groupby('G', as_index=False).sem()
+        special[['V_G_error', 'S_G_error']] = error[['V_G', 'S_G']]
         special.to_csv(options.special_write, index=False)
 
     print('\n Found Special Twist Angle:', file=sys.stderr)
