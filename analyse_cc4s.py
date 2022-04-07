@@ -12,6 +12,9 @@ average structure factor and the given individual structure factor.
 More details can be found in: https://doi.org/10.1038/s43588-021-00165-1
 '''
 
+# TODO - WZV
+# Refactor code to eliminate repeated calculations of the same data
+
 import os
 import sys
 import time
@@ -566,8 +569,9 @@ def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
         raw_SF.append(SFi)
 
     group = pd.concat(raw_SF).groupby('G', as_index=False)
-    SF = group.mean()
-    SF[['V_G_error', 'S_G_error']] = group.sem()[['V_G', 'S_G']]
+    SF = group[['G', 'S_G']].mean()
+    SF['S_G_error'] = group['S_G'].sem()['S_G']
+    SF['V_G'] = group['V_G'].sum()['V_G']/len(Coulomb_files)
 
     return raw_SF, SF
 
@@ -667,10 +671,10 @@ def write_individual_twist_average_csv(single_write, raw_SF):
         aSFi = pd.DataFrame({'Twist angle Num': itwist})
 
         group = SFi.groupby('G', as_index=False)
-        aSFi = group.mean()
-        aSFi[['V_G_error', 'S_G_error']] = group.sem()[['V_G', 'S_G']]
-
-        aSFi = aSFi.sort_values('G').reset_index(drop=True)
+        aSFi = group[['G', 'S_G']].mean()
+        aSFi['S_G_error'] = group['S_G'].sem()['S_G']
+        aSFi['V_G'] = group['V_G'].sum()['V_G']
+        aSFi.sort_values(by=['G'], inplace=True)
         individual_averages.append(aSFi)
 
     pd.concat(individual_averages).to_csv(single_write, index=False)
@@ -736,9 +740,10 @@ def main(arguments):
     if options.special_write is not None:
         msg = ' Saving special twist angle structure factor to:'
         print(msg+f' {options.special_write}', file=sys.stderr)
-        special = raw_SF[ispecial].groupby('G', as_index=False).mean()
-        error = raw_SF[ispecial].groupby('G', as_index=False).sem()
-        special[['V_G_error', 'S_G_error']] = error[['V_G', 'S_G']]
+        sgroup = raw_SF[ispecial].groupby('G', as_index=False)
+        special = sgroup[['G', 'S_G']].mean()
+        special['S_G_error'] = sgroup['S_G'].sem()['S_G']
+        special['V_G'] = sgroup['V_G'].sum()['V_G']
         special.to_csv(options.special_write, index=False)
 
     print('\n Found Special Twist Angle:', file=sys.stderr)
