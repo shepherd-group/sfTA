@@ -209,7 +209,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                     aSFi['G'],
                     aSFi['S_G'],
                     eSFi['S_G'],
-                    label='S(G), MP2' if i == 1 else '',
+                    label='individual twists' if i == 1 else '',
                     color='#02a642',
                 )
 
@@ -218,7 +218,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                         aSFi['G'],
                         aSFi['S_G'],
                         eSFi['S_G'],
-                        label='S(G), Special-Twist-MP2',
+                        label='special twist',
                         color='#f26003',
                         marker='o',
                         ls='--',
@@ -232,7 +232,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                 SF['G'],
                 SF['S_G'],
                 SF['S_G_error'],
-                label='S(G), TA-MP2',
+                label='twist averaged',
                 color='#2c43fc',
                 zorder=10,
             )
@@ -256,7 +256,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                     aSFi['G'],
                     aSFi['S_G'] - SF['S_G'],
                     np.sqrt(eSFi['S_G']**2 + SF['S_G_error']**2),
-                    label='S(G), MP2' if i == 1 else '',
+                    label='individual twists' if i == 1 else '',
                     color='#02a642',
                 )
 
@@ -265,7 +265,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                         aSFi['G'],
                         aSFi['S_G'] - SF['S_G'],
                         np.sqrt(eSFi['S_G']**2 + SF['S_G_error']**2),
-                        label='S(G), Special-Twist-MP2',
+                        label='special twist',
                         color='#f26003',
                         marker='o',
                         ls='--',
@@ -276,7 +276,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
 
         plt.axhline(
                 y=0,
-                label='S(G), TA-MP2',
+                label='twist averaged',
                 color='#2c43fc',
                 zorder=10,
             )
@@ -308,7 +308,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                 SF['G'],
                 variance - variance_error,
                 variance + variance_error,
-                label='S(G), TA-MP2',
+                label='twist averaged',
                 color='#2c43fc',
                 zorder=10,
                 alpha=0.5,
