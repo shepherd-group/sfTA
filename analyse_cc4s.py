@@ -118,6 +118,11 @@ def parse_command_line_arguments(arguments):
                         'factor data and the average structure factor. '
                         'The format is png, and the extenstion is not '
                         'required in the provided name.')
+    parser.add_argument('-dp', '--difference-plot', action='store',
+                        default=None, type=str, dest='difference_plot',
+                        help='Provide a filename for the plot showing the '
+                        'difference between the individual structure factors '
+                        'and the twist averaged structure factors.')
     parser.add_argument('-vp', '--variance-plot', action='store', default=None,
                         type=str, dest='variance_plot', help='Provide a file '
                         'name to store the plot of the variance in the '
@@ -156,7 +161,7 @@ def parse_command_line_arguments(arguments):
     return options.directories, options
 
 
-def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
+def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
     ''' Performs all the plotting that can occur based on user input.
     This could be either the individual structure factors, the average
     structure factor and the special twist. Or the variance of the average
@@ -167,6 +172,9 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
     sfta_plot : str
         A string for the structure factor plot name, default is None in
         which case no plot is created.
+    difference_plot : str
+        A string for the plot name of the difference between the
+        twist averaged structure factor and the individual structure factors.
     variance_plot : str
         A string for the plot of the variance for the average structure
         factor. Default is None in which case no plot is created.
@@ -210,7 +218,7 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
                         aSFi['G'],
                         aSFi['S_G'],
                         eSFi['S_G'],
-                        label='S(G), BasisSetData-MP2',
+                        label='S(G), Special-Twist-MP2',
                         color='#f26003',
                         marker='o',
                         ls='--',
@@ -235,6 +243,50 @@ def plot_SF(sfta_plot, variance_plot, raw_SF, SF, ispecial):
         print(' Saving structure factor plot to: '
               f'{sfta_plot}', file=sys.stderr)
         plt.savefig(sfta_plot, bbox_inches='tight')
+
+    if difference_plot is not None:
+        plt.clf()
+        SF = SF.sort_values('G')
+
+        for i, SFi in enumerate(raw_SF):
+            aSFi = SFi.groupby('G', as_index=False).mean().sort_values('G')
+            eSFi = SFi.groupby('G', as_index=False).sem().sort_values('G')
+
+            plt.errorbar(
+                    aSFi['G'],
+                    aSFi['S_G'] - SF['S_G'],
+                    np.sqrt(eSFi['S_G']**2 + SF['S_G_error']**2),
+                    label='S(G), MP2' if i == 1 else '',
+                    color='#02a642',
+                )
+
+            if i == ispecial:
+                plt.errorbar(
+                        aSFi['G'],
+                        aSFi['S_G'] - SF['S_G'],
+                        np.sqrt(eSFi['S_G']**2 + SF['S_G_error']**2),
+                        label='S(G), Special-Twist-MP2',
+                        color='#f26003',
+                        marker='o',
+                        ls='--',
+                        markeredgecolor='k',
+                        markeredgewidth=1.0,
+                        zorder=15,
+                    )
+
+        plt.axhline(
+                y=0,
+                label='S(G), TA-MP2',
+                color='#2c43fc',
+                zorder=10,
+            )
+
+        plt.xlabel('G')
+        plt.ylabel(r'$\Delta$S(G)')
+        plt.legend(loc='best', ncol=1, handlelength=1.0, handletextpad=0.1)
+        print(' Saving structure difference factor plot to: '
+              f'{difference_plot}', file=sys.stderr)
+        plt.savefig(difference_plot, bbox_inches='tight')
 
     if variance_plot is not None:
         plt.clf()
@@ -560,18 +612,22 @@ def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
         A data frame of the average structure factor.
     '''
     raw_SF = []
+    SF = pd.DataFrame()
 
     for files in zip(Gvector_files, Coulomb_files, S_G_files):
-        G = read_and_generate_Gvector_magnitudes(files[0])
+        G = read_and_generate_Gvector_magnitudes(files[0]).round(10)
         V_G = read_Vg(files[1])
         S_G = read_Sg(files[2])
-        SFi = pd.DataFrame({'G': G.round(10), 'V_G': V_G, 'S_G': S_G})
+        SV_G = S_G*V_G
+        SFi = pd.DataFrame({'G': G, 'V_G': V_G, 'S_G': S_G, 'S_G*V_G': SV_G})
         raw_SF.append(SFi)
 
-    group = pd.concat(raw_SF).groupby('G', as_index=False)
-    SF = group[['G', 'S_G']].mean()
-    SF['S_G_error'] = group['S_G'].sem()['S_G']
-    SF['V_G'] = group['V_G'].sum()['V_G']/len(Coulomb_files)
+    group = pd.concat(raw_SF).groupby('G')
+    SF['S_G'] = group['S_G'].mean()
+    SF['S_G_error'] = group['S_G'].sem()
+    SF['S_G*V_G'] = group['S_G*V_G'].sum()/len(Coulomb_files)
+    SF['V_G'] = group['V_G'].sum()/len(Coulomb_files)
+    SF.reset_index(drop=False, inplace=True)
 
     return raw_SF, SF
 
@@ -667,14 +723,17 @@ def write_individual_twist_average_csv(single_write, raw_SF):
     individual_averages = []
 
     for i, SFi in enumerate(raw_SF):
+        aSFi = pd.DataFrame()
         itwist = np.repeat(i+1, np.unique(SFi['G']).shape[0])
-        aSFi = pd.DataFrame({'Twist angle Num': itwist})
 
-        group = SFi.groupby('G', as_index=False)
-        aSFi = group[['G', 'S_G']].mean()
-        aSFi['S_G_error'] = group['S_G'].sem()['S_G']
-        aSFi['V_G'] = group['V_G'].sum()['V_G']
-        aSFi.sort_values(by=['G'], inplace=True)
+        group = SFi.groupby('G')
+        aSFi['S_G'] = group['S_G'].mean()
+        aSFi['S_G_error'] = group['S_G'].sem()
+        aSFi['S_G*V_G'] = group['S_G*V_G'].sum()
+        aSFi['V_G'] = group['V_G'].sum()
+        aSFi.reset_index(drop=False, inplace=True)
+        aSFi.insert(0, 'Twist angle Num', itwist)
+
         individual_averages.append(aSFi)
 
     pd.concat(individual_averages).to_csv(single_write, index=False)
@@ -734,16 +793,19 @@ def main(arguments):
     if options.single_write is not None:
         write_individual_twist_average_csv(options.single_write, raw_SF)
 
-    if options.sfta_plot is not None or options.variance_plot is not None:
-        plot_SF(options.sfta_plot, options.variance_plot, raw_SF, SF, ispecial)
+    plot_SF(options.sfta_plot, options.difference_plot,
+            options.variance_plot, raw_SF, SF, ispecial)
 
     if options.special_write is not None:
         msg = ' Saving special twist angle structure factor to:'
         print(msg+f' {options.special_write}', file=sys.stderr)
-        sgroup = raw_SF[ispecial].groupby('G', as_index=False)
-        special = sgroup[['G', 'S_G']].mean()
-        special['S_G_error'] = sgroup['S_G'].sem()['S_G']
-        special['V_G'] = sgroup['V_G'].sum()['V_G']
+        special = pd.DataFrame()
+        group = raw_SF[ispecial].groupby('G')
+        special['S_G'] = group['S_G'].mean()
+        special['S_G_error'] = group['S_G'].sem()
+        special['S_G*V_G'] = group['S_G*V_G'].sum()
+        special['V_G'] = group['V_G'].sum()
+        special.reset_index(drop=False, inplace=True)
         special.to_csv(options.special_write, index=False)
 
     print('\n Found Special Twist Angle:', file=sys.stderr)
