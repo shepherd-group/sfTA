@@ -258,7 +258,7 @@ def parse_command_line_arguments(
 
     options = parser.parse_args(arguments)
 
-    def __ext_filename_check(filename: str, ext: str) -> str:
+    def __ext_check(filename: str, ext: str) -> str:
         ''' A private function to ensure user provided
         filenames have the corresponding extension.
         '''
@@ -266,13 +266,14 @@ def parse_command_line_arguments(
             filename += ext
         return filename
 
-    options.average_write = __ext_filename_check(options.average_write, '.csv')
-    options.special_write = __ext_filename_check(options.special_write, '.csv')
-    options.single_write = __ext_filename_check(options.single_write, '.csv')
-    options.mp2_write = __ext_filename_check(options.mp2_write, '.csv')
-    options.legacy_write = __ext_filename_check(options.legacy_write, '.csv')
-    options.sfta_plot = __ext_filename_check(options.sfta_plot, '.png')
-    options.variance_plot = __ext_filename_check(options.variance_plot, '.png')
+    options.average_write = __ext_check(options.average_write, '.csv')
+    options.special_write = __ext_check(options.special_write, '.csv')
+    options.single_write = __ext_check(options.single_write, '.csv')
+    options.mp2_write = __ext_check(options.mp2_write, '.csv')
+    options.legacy_write = __ext_check(options.legacy_write, '.csv')
+    options.sfta_plot = __ext_check(options.sfta_plot, '.png')
+    options.difference_plot = __ext_check(options.difference_plot, '.png')
+    options.variance_plot = __ext_check(options.variance_plot, '.png')
 
     return options
 
