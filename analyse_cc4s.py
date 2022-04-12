@@ -75,7 +75,7 @@ class StructureFactor:
         ----------
         clargs : list of str
             The user provided command line arguments.
-        fmt : str, default=24.16f
+        fmt : str, default="%24.16f"
             Changes the float format for the various reports done as to string.
         '''
         self.initial_time = time.perf_counter()
