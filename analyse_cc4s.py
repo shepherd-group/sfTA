@@ -138,9 +138,15 @@ class StructureFactor:
             write_individual_twist_average_csv(single_output, self.aSFi)
             self.update_timing_report(msg='Individual twist average storing')
 
-        plot_SF(self.options.sfta_plot, self.options.difference_plot,
-                self.options.variance_plot, self.aSFi, self.aSF, self.ispecial)
-        self.update_timing_report(msg='Structure factor plotting')
+        plot_names = [
+                self.options.sfta_plot, self.options.difference_plot,
+                self.options.variance_plot,
+            ]
+        if any(k is not None for k in plot_names):
+            plot_SF(self.options.sfta_plot, self.options.difference_plot,
+                    self.options.variance_plot, self.aSFi,
+                    self.aSF, self.ispecial)
+            self.update_timing_report(msg='Structure factor plotting')
 
         if self.options.special_write is not None:
             special_output = self.options.special_write
@@ -177,10 +183,12 @@ class StructureFactor:
         time elapsed for all processing, then report to the user.
         '''
         self.previous_time = self.initial_time
-        self.update_timing_report(msg='All analysis total time.')
+        self.update_timing_report(msg='All analysis total time')
         timing_report = pd.DataFrame(self.timing_report)
-        timing_report = timing_report.to_string(index=False)
-        print('\n', timing_report, file=sys.stderr)
+        timing_report['% time '] = timing_report['time (min) '].astype(float)
+        timing_report['% time '] /= timing_report['% time '].iloc[-1]/100
+        report = timing_report.to_string(index=False, float_format='%.2f')
+        print('\n Final script timing report: \n', report, file=sys.stderr)
 
 
 def parse_command_line_arguments(
