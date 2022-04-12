@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-'''analyse_cc4s.py [options] directory_1 directory_2 ... directory_N
+''' analyse_cc4s.py [options] directory_1 directory_2 ... directory_N
 
 Perform sFTA on a list of user provided directories which
 contain cc4s structure factor outputs `GridVectors.elements`,
@@ -12,13 +12,11 @@ average structure factor and the given individual structure factor.
 More details can be found in: https://doi.org/10.1038/s43588-021-00165-1
 '''
 
-# TODO - WZV
-# Refactor code to eliminate repeated calculations of the same data
-
 import os
 import sys
 import time
 import yaml
+import typing
 import warnings
 import argparse
 import numpy as np
@@ -26,56 +24,168 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+nparray = typing.TypeVar('np.ndarray')
+pddataframe = typing.TypeVar('pd.core.frame.DataFrame')
 
-class ScriptTimer:
-    ''' A simple timer for the analysis script.
+
+class StructureFactor:
+    ''' A simple class to store all the structure factor data in
+    to prevent repeated recalculation and make analysis clean.
 
     Attributes
     ----------
-    start : float
-        The start time set when the timer is initalized
-    current : float
-        The final time when the lap or stop methods are called
-    total : float
-        The time between start and current, updated by lap or stop
+    initial_time : float
+        The seconds from epoch we started our analysis.
+    previous_time : float
+        The seconds from epoch we started a new timer instance.
+    timing_report : dictionary
+        Stores the integer count, corresponding note and total time in minutes
+        required to perform each step of analysis.
+    options : list of str and bool
+        Stores the command line arguments parsed using argparse.
+    directories : list of str
+        Stores the paths with structure factor data
+    mp2_df : :class:`pandas.DataFrame`
+        Stores energies scrubbed from cc4s yaml output files.
+    SFi : list of :class:`pandas.DataFrame`
+        Stores the individual structure factors prior to averaging in the
+        G vectors within a twist angle, sorted by G.
+    aSFi : list of :class:`pandas.DataFrame`
+        Stores the individual structure factors averaged within a given
+        G vector, sorted by G.
+    aSF : :class:`pandas.DataFrame`
+        Stores the twist averaged structure factor across all twists
+        and within a given G vector, sorted by G.
+    ispecial : int
+        The index corresponding to the special twist angle in the various
+        lists.
+
+    Methods
+    -------
+    update_timing_report(msg)
+        Adds a timing check point to the timing report dictionary.
+    end_timing_report()
+        Close out the timing report and print out to the user.
     '''
-    def __report(self, msg):
-        ''' Private method to report time and msg in a non-intrusive way '''
-        print(f'\n {msg}: {self.total:>9.6f} (minutes)\n', file=sys.stderr)
+    def __init__(self, clargs: typing.List[str], fmt: str = '%24.16f') -> None:
+        ''' Run the general structure factor analysis based on the user
+        provided command line arguments.
 
-    def __update(self):
-        ''' Private method to update the time '''
-        self.current = time.perf_counter()
-        self.total = (self.current - self.start)/60.0
+        Parameters
+        ----------
+        clargs : list of str
+            The user provided command line arguments.
+        fmt : str, default=24.16f
+            Changes the float format for the various reports done as to string.
+        '''
+        self.initial_time = time.perf_counter()
+        self.previous_time = self.initial_time
+        self.timing_report = {'step ': [], 'note ': [], 'time (min) ': []}
 
-    @classmethod
-    def start(cls):
-        ''' Initialize the timer instance. '''
-        cls.start = time.perf_counter()
+        self.options = parse_command_line_arguments(clargs)
+        directories = self.options.directories
+        self.directories = clean_paths_and_simple_checks(directories)
+        self.update_timing_report(msg='Input parsing and directory checks')
 
-    @classmethod
-    def lap(cls, msg='Time for lap'):
-        ''' Calculate an intemediate time in minutes, and report
+        if self.options.mp2 or self.options.mp2_write is not None:
+            yaml_out_files = find_yaml_outs(self.directories)
+            self.mp2_df = extract_mp2_from_yaml(yaml_out_files)
+            self.update_timing_report(msg='Yaml checks and parsing')
+
+            if self.options.mp2:
+                mp2_str = self.mp2_df.to_string(index=False, float_format=fmt)
+                print(mp2_str, file=sys.stderr)
+                self.update_timing_report(msg='MP2 energy dumping')
+
+            if self.options.mp2_write is not None:
+                msg = f' Saving MP2 energies to: {self.options.mp2_write}'
+                print(msg, file=sys.stderr)
+                self.mp2_df.to_csv(self.options.mp2_write, index=False)
+                self.update_timing_report(msg='MP2 energy storing')
+
+        if self.options.skip_sfta:
+            return
+
+        Gvector_files, Coulomb_files, S_G_files = find_SF_outputs(directories)
+        self.update_timing_report(msg='Structure factor output search')
+
+        sf_tuple = read_and_average_SF(Gvector_files, Coulomb_files, S_G_files)
+        self.update_timing_report(msg='Structure factor parsing and analysis')
+
+        self.SFi, self.aSFi, self.aSF = sf_tuple
+
+        self.ispecial = find_special_twist_angle(self.aSFi, self.aSF)
+        self.update_timing_report(msg='Special twist analysis')
+
+        if self.options.legacy_write is not None:
+            legacy_output = self.options.legacy_write
+            write_sfTA_csv(legacy_output, self.directories, self.SFi)
+            self.update_timing_report(msg='Raw structure factor storing')
+
+        if self.options.average:
+            SF_str = self.aSF.to_string(index=False, float_format=fmt)
+            print(SF_str, file=sys.stderr)
+            self.update_timing_report(msg='Twist average dumping')
+
+        if self.options.average_write is not None:
+            msg = ' Saving average structure factor to:'
+            print(f'{msg} {self.options.average_write}', file=sys.stderr)
+            self.aSF.to_csv(self.options.average_write, index=False)
+            self.update_timing_report(msg='Twist average storing')
+
+        if self.options.single_write is not None:
+            single_output = self.options.single_write
+            write_individual_twist_average_csv(single_output, self.aSFi)
+            self.update_timing_report(msg='Individual twist average storing')
+
+        plot_SF(self.options.sfta_plot, self.options.difference_plot,
+                self.options.variance_plot, self.aSFi, self.aSF, self.ispecial)
+        self.update_timing_report(msg='Structure factor plotting')
+
+        if self.options.special_write is not None:
+            special_output = self.options.special_write
+            msg = ' Saving special twist angle structure factor to:'
+            print(f'{msg} {special_output}', file=sys.stderr)
+            self.aSFi[self.ispecial].to_csv(special_output, index=False)
+            self.update_timing_report(msg='Special twist storing')
+
+        self.end_timing_report()
+
+        print('\n Found Special Twist Angle:', file=sys.stderr)
+        print(f' {self.directories[self.ispecial]}\n', file=sys.stderr)
+
+    def update_timing_report(self, msg: str) -> None:
+        ''' Perform the calculation of the elapsed time for a given
+        process and report the index, time and message for the process
+        during sfTA analysis.
 
         Parameters
         ----------
         msg : str
-            A message the user would like to report when printing timings
-
-        Returns
-        -------
-        None.
+            The message corresponding to the timed process.
         '''
-        cls.__update(cls)
-        cls.__report(cls, msg)
+        current_time = time.perf_counter()
+        dt = (current_time - self.previous_time)/60
+        self.previous_time = current_time
+        nstep = len(self.timing_report['step '])+1
+        self.timing_report['step '].append(f'{nstep}')
+        self.timing_report['note '].append(msg)
+        self.timing_report['time (min) '].append(f'{dt:>10.6f}')
 
-    @classmethod
-    def stop(cls):
-        ''' Calculate the total time in minutes, and report '''
-        cls.lap(msg='Script execution time')
+    def end_timing_report(self) -> None:
+        ''' Close out the timing report by updating with the total
+        time elapsed for all processing, then report to the user.
+        '''
+        self.previous_time = self.initial_time
+        self.update_timing_report(msg='All analysis total time.')
+        timing_report = pd.DataFrame(self.timing_report)
+        timing_report = timing_report.to_string(index=False)
+        print('\n', timing_report, file=sys.stderr)
 
 
-def parse_command_line_arguments(arguments):
+def parse_command_line_arguments(
+            arguments: typing.List[str],
+        ) -> typing.Type[argparse.ArgumentParser]:
     ''' Parse command-line arguments.
 
     Parameters
@@ -85,8 +195,6 @@ def parse_command_line_arguments(arguments):
 
     Returns
     -------
-    directories : list of strings
-        The directories where structure factor data is contained.
     options : :class:`ArgumentParser`
         User options read in from the command-line.
     '''
@@ -142,7 +250,7 @@ def parse_command_line_arguments(arguments):
 
     options = parser.parse_args(arguments)
 
-    def __ext_filename_check(filename, ext):
+    def __ext_filename_check(filename: str, ext: str) -> str:
         ''' A private function to ensure user provided
         filenames have the corresponding extension.
         '''
@@ -158,10 +266,12 @@ def parse_command_line_arguments(arguments):
     options.sfta_plot = __ext_filename_check(options.sfta_plot, '.png')
     options.variance_plot = __ext_filename_check(options.variance_plot, '.png')
 
-    return options.directories, options
+    return options
 
 
-def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
+def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
+            raw_aSF: typing.List[pddataframe],
+            SF: pddataframe, ispecial: int) -> None:
     ''' Performs all the plotting that can occur based on user input.
     This could be either the individual structure factors, the average
     structure factor and the special twist. Or the variance of the average
@@ -178,17 +288,13 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
     variance_plot : str
         A string for the plot of the variance for the average structure
         factor. Default is None in which case no plot is created.
-    raw_SF : list of :class:`pandas.DataFrame`
-        A list of all the structure factors.
+    raw_aSF : list of :class:`pandas.DataFrame`
+        A list of all the average structure factors for a given twist angle.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
     ispecial : integer
         The index of the special twist angle. The index is pythonic and
         matches the various lists used throughout.
-
-    Returns
-    -------
-    None.
     '''
     font = {'family': 'serif', 'sans-serif': 'Computer Modern Roman'}
     mpl.rc('font', **font)
@@ -201,14 +307,11 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
     if sfta_plot is not None:
         plt.clf()
 
-        for i, SFi in enumerate(raw_SF):
-            aSFi = SFi.groupby('G', as_index=False).mean().sort_values('G')
-            eSFi = SFi.groupby('G', as_index=False).sem().sort_values('G')
-
+        for i, aSFi in enumerate(raw_aSF):
             plt.errorbar(
                     aSFi['G'],
                     aSFi['S_G'],
-                    eSFi['S_G'],
+                    aSFi['S_G_error'],
                     label='individual twists' if i == 1 else '',
                     color='#02a642',
                 )
@@ -217,7 +320,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                 plt.errorbar(
                         aSFi['G'],
                         aSFi['S_G'],
-                        eSFi['S_G'],
+                        aSFi['S_G_error'],
                         label='special twist',
                         color='#f26003',
                         marker='o',
@@ -227,7 +330,6 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                         zorder=15,
                     )
 
-        SF = SF.sort_values('G')
         plt.errorbar(
                 SF['G'],
                 SF['S_G'],
@@ -248,14 +350,12 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
         plt.clf()
         SF = SF.sort_values('G')
 
-        for i, SFi in enumerate(raw_SF):
-            aSFi = SFi.groupby('G', as_index=False).mean().sort_values('G')
-            eSFi = SFi.groupby('G', as_index=False).sem().sort_values('G')
+        for i, aSFi in enumerate(raw_aSF):
 
             plt.errorbar(
                     aSFi['G'],
                     aSFi['S_G'] - SF['S_G'],
-                    np.sqrt(eSFi['S_G']**2 + SF['S_G_error']**2),
+                    np.sqrt(aSFi['S_G_error']**2 + SF['S_G_error']**2),
                     label='individual twists' if i == 1 else '',
                     color='#02a642',
                 )
@@ -264,7 +364,7 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
                 plt.errorbar(
                         aSFi['G'],
                         aSFi['S_G'] - SF['S_G'],
-                        np.sqrt(eSFi['S_G']**2 + SF['S_G_error']**2),
+                        np.sqrt(aSFi['S_G_error']**2 + SF['S_G_error']**2),
                         label='special twist',
                         color='#f26003',
                         marker='o',
@@ -291,9 +391,9 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
     if variance_plot is not None:
         plt.clf()
 
-        SF = SF.sort_values('G')
-        sem_error = SF['S_G_error']/((2*(len(raw_SF) - 1))**0.5)
-        variance = (SF['S_G_error'] * (len(raw_SF))**0.5)**2.0
+        ntwists = len(raw_aSF)
+        sem_error = SF['S_G_error']/((2*(ntwists - 1))**0.5)
+        variance = (SF['S_G_error'] * (ntwists)**0.5)**2.0
         variance_error = (sem_error * 2.0 * variance) / SF['S_G_error']
 
         plt.plot(
@@ -323,7 +423,9 @@ def plot_SF(sfta_plot, difference_plot, variance_plot, raw_SF, SF, ispecial):
         plt.savefig(variance_plot, bbox_inches='tight')
 
 
-def clean_paths_and_simple_checks(directories):
+def clean_paths_and_simple_checks(
+            directories: typing.List[str],
+        ) -> typing.List[str]:
     ''' Perform some simple pre checks on the user provided directories.
 
     Parameters
@@ -368,7 +470,7 @@ def clean_paths_and_simple_checks(directories):
     return cleaned_directories
 
 
-def find_yaml_outs(directories):
+def find_yaml_outs(directories: typing.List[str]) -> typing.List[str]:
     ''' Search through the user provided directories and find the
     relevant yaml energy out files containing energy data.
 
@@ -400,7 +502,7 @@ def find_yaml_outs(directories):
     return yaml_out_files
 
 
-def get_yaml_as_dict(yaml_file):
+def get_yaml_as_dict(yaml_file: str) -> dict:
     ''' Read in the yaml file `cc4s.out.yaml` from a cc4s calculation
     and return the information as a dictionary.
 
@@ -420,7 +522,7 @@ def get_yaml_as_dict(yaml_file):
     return yaml_dict
 
 
-def extract_mp2_from_yaml(yaml_out_files):
+def extract_mp2_from_yaml(yaml_out_files: typing.List[str]) -> pddataframe:
     ''' Collect the data yaml out files and return the relevent
     energy data from these files.
 
@@ -439,7 +541,7 @@ def extract_mp2_from_yaml(yaml_out_files):
     RuntimeError
         When a cc4s yaml logfile is absent from a directory.
     '''
-    def __ekey_check(cstep, nkey, ekey):
+    def __ekey_check(cstep: str, nkey: str, ekey: str) -> bool:
         ''' A private function to check the yaml for an energy key '''
         iskey = False
 
@@ -488,7 +590,9 @@ def extract_mp2_from_yaml(yaml_out_files):
     return mp2_df
 
 
-def find_SF_outputs(directories):
+def find_SF_outputs(
+            directories: typing.List[str],
+        ) -> typing.Tuple[typing.List[str]]:
     ''' Search through the user provided directories and find the
     relevenant outputs for sFTA.
 
@@ -533,7 +637,7 @@ def find_SF_outputs(directories):
     return Gvector_files, Coulomb_files, S_G_files
 
 
-def read_and_generate_Gvector_magnitudes(Gvector_file):
+def read_and_generate_Gvector_magnitudes(Gvector_file: str) -> nparray:
     ''' Read in a GridVectors.elements file generated by cc4s and calculate the
     G magnitudes for sFTA.
 
@@ -555,7 +659,7 @@ def read_and_generate_Gvector_magnitudes(Gvector_file):
     return G
 
 
-def read_Vg(Coulomb_files):
+def read_Vg(Coulomb_files: str) -> nparray:
     ''' Read in a CoulombPotenial.elements file generated by cc4s.
 
     Parameters
@@ -573,7 +677,7 @@ def read_Vg(Coulomb_files):
     return V_G
 
 
-def read_Sg(S_G_file):
+def read_Sg(S_G_file: str) -> nparray:
     ''' Read in a SF.elements file generated by cc4s.
 
     Parameters
@@ -591,7 +695,11 @@ def read_Sg(S_G_file):
     return S_G
 
 
-def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
+def read_and_average_SF(
+            Gvector_files: typing.List[str],
+            Coulomb_files: typing.List[str],
+            S_G_files: typing.List[str]
+        ) -> typing.Tuple[typing.List[pddataframe], pddataframe]:
     ''' Loop through the relevant files of structure factors and calculate
     the average structure factor.
 
@@ -608,13 +716,18 @@ def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
     -------
     raw_SF : list of :class:`pandas.DataFrame`
         A list of all the structure factors.
+    raw_aSF : list of :class:`pandas.DataFrame`
+        A list of all the average structure factors for a given twist angle.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
     '''
     raw_SF = []
+    raw_aSF = []
     SF = pd.DataFrame()
 
     for files in zip(Gvector_files, Coulomb_files, S_G_files):
+        aSFi = pd.DataFrame()
+
         G = read_and_generate_Gvector_magnitudes(files[0]).round(10)
         V_G = read_Vg(files[1])
         S_G = read_Sg(files[2])
@@ -622,24 +735,35 @@ def read_and_average_SF(Gvector_files, Coulomb_files, S_G_files):
         SFi = pd.DataFrame({'G': G, 'V_G': V_G, 'S_G': S_G, 'S_G*V_G': SV_G})
         raw_SF.append(SFi)
 
+        group = SFi.groupby('G')
+        aSFi['S_G'] = group['S_G'].mean()
+        aSFi['S_G_error'] = group['S_G'].sem()
+        aSFi['S_G*V_G'] = group['S_G*V_G'].sum()
+        aSFi['V_G'] = group['V_G'].sum()
+        aSFi.reset_index(drop=False, inplace=True)
+        aSFi.sort_values(by='G', inplace=True)
+        raw_aSF.append(aSFi)
+
     group = pd.concat(raw_SF).groupby('G')
     SF['S_G'] = group['S_G'].mean()
     SF['S_G_error'] = group['S_G'].sem()
     SF['S_G*V_G'] = group['S_G*V_G'].sum()/len(Coulomb_files)
     SF['V_G'] = group['V_G'].sum()/len(Coulomb_files)
     SF.reset_index(drop=False, inplace=True)
+    SF.sort_values(by='G', inplace=True)
 
-    return raw_SF, SF
+    return (raw_SF, raw_aSF, SF)
 
 
-def find_special_twist_angle(raw_SF, SF):
+def find_special_twist_angle(raw_aSF: typing.List[pddataframe],
+                             SF: pddataframe) -> int:
     ''' Find the twist angle corresponding to the minimum residual
     between the twist averaged S_G and a given S_G.
 
     Parameters
     ----------
-    raw_SF : list of :class:`pandas.DataFrame`
-        A list of all the structure factors.
+    raw_aSF : list of :class:`pandas.DataFrame`
+        A list of all the individual average structure factors.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
 
@@ -657,8 +781,7 @@ def find_special_twist_angle(raw_SF, SF):
     '''
     residuals = []
 
-    for SFi in raw_SF:
-        aSFi = SFi.groupby('G', as_index=False).mean()
+    for aSFi in raw_aSF:
         residuals.append(np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2).sum())
 
         if not np.array_equal(aSFi['G'], SF['G']):
@@ -671,7 +794,8 @@ def find_special_twist_angle(raw_SF, SF):
     return ispecial
 
 
-def write_sfTA_csv(csv_file, directories, raw_SF):
+def write_sfTA_csv(csv_file: str, directories: typing.List[str],
+                   raw_SF: typing.List[pddataframe]) -> None:
     ''' Write out the raw structure factor data in a format
     which is ammendable to sfTA.py.
 
@@ -683,10 +807,6 @@ def write_sfTA_csv(csv_file, directories, raw_SF):
         The directories where structure factor data is contained.
     raw_SF : list of :class:`pandas.DataFrame`
         A list of all the structure factors.
-
-    Returns
-    -------
-    None.
     '''
     csv_twist = csv_file.replace('.csv', '_Twist_angle_Num_map.csv')
 
@@ -706,113 +826,39 @@ def write_sfTA_csv(csv_file, directories, raw_SF):
     pd.DataFrame(csv_mp).to_csv(csv_twist, index=False)
 
 
-def write_individual_twist_average_csv(single_write, raw_SF):
+def write_individual_twist_average_csv(
+            single_write: str, raw_aSF: typing.List[pddataframe],
+        ) -> None:
     ''' Write out the average of the individual twist angles to a csv file.
 
     Parameters
     ----------
     single_write : str
         A user provided name to save the data to.
-    raw_SF : list of :class:`pandas.DataFrame`
-        A list of all the structure factors.
-
-    Returns
-    -------
-    None.
+    raw_aSF : list of :class:`pandas.DataFrame`
+        A list of all the individual average structure factors.
     '''
     individual_averages = []
 
-    for i, SFi in enumerate(raw_SF):
-        aSFi = pd.DataFrame()
-        itwist = np.repeat(i+1, np.unique(SFi['G']).shape[0])
-
-        group = SFi.groupby('G')
-        aSFi['S_G'] = group['S_G'].mean()
-        aSFi['S_G_error'] = group['S_G'].sem()
-        aSFi['S_G*V_G'] = group['S_G*V_G'].sum()
-        aSFi['V_G'] = group['V_G'].sum()
-        aSFi.reset_index(drop=False, inplace=True)
+    for i, aSFi in enumerate(raw_aSF):
+        itwist = np.repeat(i+1, np.unique(aSFi['G']).shape[0])
         aSFi.insert(0, 'Twist angle Num', itwist)
-
         individual_averages.append(aSFi)
 
     pd.concat(individual_averages).to_csv(single_write, index=False)
     print(f' Saving individual averages to: {single_write}', file=sys.stderr)
 
 
-def main(arguments):
+def main(arguments: typing.List[str]) -> None:
     ''' Run structure factor twist averaging on cc4s outputs.
 
     Parameters
     ----------
     arguments : list of strings
         User provided command-line arguments.
-
-    Returns
-    -------
-    None.
     '''
-    directories, options = parse_command_line_arguments(arguments)
-
-    directories = clean_paths_and_simple_checks(directories)
-
-    if options.mp2 or options.mp2_write is not None:
-        yaml_out_files = find_yaml_outs(directories)
-        mp2_df = extract_mp2_from_yaml(yaml_out_files)
-
-        if options.mp2:
-            mp2_df_str = mp2_df.to_string(index=False, float_format='%24.16f')
-            print(mp2_df_str, file=sys.stderr)
-
-        if options.mp2_write is not None:
-            msg = f' Saving MP2 energies to: {options.mp2_write}'
-            print(msg, file=sys.stderr)
-            mp2_df.to_csv(options.mp2_write, index=False)
-
-    if options.skip_sfta:
-        return
-
-    Gvector_files, Coulomb_files, S_G_files = find_SF_outputs(directories)
-
-    raw_SF, SF = read_and_average_SF(Gvector_files, Coulomb_files, S_G_files)
-
-    ispecial = find_special_twist_angle(raw_SF, SF)
-
-    if options.legacy_write is not None:
-        write_sfTA_csv(options.legacy_write, directories, raw_SF)
-
-    if options.average:
-        SF_str = SF.to_string(index=False, float_format='%24.16f')
-        print(SF_str, file=sys.stderr)
-
-    if options.average_write is not None:
-        msg = f' Saving average structure factor to: {options.average_write}'
-        print(msg, file=sys.stderr)
-        SF.to_csv(options.average_write, index=False)
-
-    if options.single_write is not None:
-        write_individual_twist_average_csv(options.single_write, raw_SF)
-
-    plot_SF(options.sfta_plot, options.difference_plot,
-            options.variance_plot, raw_SF, SF, ispecial)
-
-    if options.special_write is not None:
-        msg = ' Saving special twist angle structure factor to:'
-        print(msg+f' {options.special_write}', file=sys.stderr)
-        special = pd.DataFrame()
-        group = raw_SF[ispecial].groupby('G')
-        special['S_G'] = group['S_G'].mean()
-        special['S_G_error'] = group['S_G'].sem()
-        special['S_G*V_G'] = group['S_G*V_G'].sum()
-        special['V_G'] = group['V_G'].sum()
-        special.reset_index(drop=False, inplace=True)
-        special.to_csv(options.special_write, index=False)
-
-    print('\n Found Special Twist Angle:', file=sys.stderr)
-    print(f' {directories[ispecial]}\n', file=sys.stderr)
+    StructureFactor(arguments)
 
 
 if __name__ == '__main__':
-    ScriptTimer.start()
     main(sys.argv[1:])
-    ScriptTimer.stop()
