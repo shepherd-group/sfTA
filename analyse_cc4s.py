@@ -114,7 +114,9 @@ class StructureFactor:
 
         self.SFi, self.aSFi, self.aSF = sf_tuple
 
-        self.ispecial = find_special_twist_angle(self.aSFi, self.aSF)
+        use_weighted_residuals = self.options.weighted_residuals
+        self.ispecial = find_special_twist_angle(self.aSFi, self.aSF,
+                                                 use_weighted_residuals)
         self.update_timing_report(msg='Special twist analysis')
 
         if self.options.legacy_write is not None:
@@ -249,6 +251,10 @@ def parse_command_line_arguments(
     parser.add_argument('-e', '--mp2', action='store_true', default=False,
                         dest='mp2', help='Pull the MP2 energies and print out '
                         'as a table to the standard error output.')
+    parser.add_argument('-w', '--weighted-residuals', action='store_true',
+                        default=False, dest='weighted_residuals', help='Use '
+                        'a weight 1/|G|^2 for the difference when calculating '
+                        'the residuals to find the special twist angle.')
     parser.add_argument('-s', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
@@ -764,8 +770,11 @@ def read_and_average_SF(
     return (raw_SF, raw_aSF, SF)
 
 
-def find_special_twist_angle(raw_aSF: typing.List[pddataframe],
-                             SF: pddataframe) -> int:
+def find_special_twist_angle(
+            raw_aSF: typing.List[pddataframe],
+            SF: pddataframe,
+            use_weighted_residuals: bool,
+        ) -> int:
     ''' Find the twist angle corresponding to the minimum residual
     between the twist averaged S_G and a given S_G.
 
@@ -775,6 +784,9 @@ def find_special_twist_angle(raw_aSF: typing.List[pddataframe],
         A list of all the individual average structure factors.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
+    use_weighted_residuals : bool
+        Controls whether the difference is weighted by the 1/|G|^2 values
+        when calculating the residual.
 
     Returns
     -------
@@ -791,7 +803,12 @@ def find_special_twist_angle(raw_aSF: typing.List[pddataframe],
     residuals = []
 
     for aSFi in raw_aSF:
-        residuals.append(np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2).sum())
+        delta_S_G = np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2)
+
+        if use_weighted_residuals:
+            delta_S_G /= np.power(np.abs(SF['S_G']), 2)
+
+        residuals.append(delta_S_G.sum())
 
         if not np.array_equal(aSFi['G'], SF['G']):
             raise RuntimeError('G value arrays are not equivlent between'
