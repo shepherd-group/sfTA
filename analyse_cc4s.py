@@ -859,9 +859,9 @@ def find_special_twist_angle(
         delta_S_G = np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2)
 
         if anisotropic:
-            delta_Gx = np.power(np.abs(SF['Gx'] - aSFi['Gx']), 2)
-            delta_Gy = np.power(np.abs(SF['Gy'] - aSFi['Gy']), 2)
-            delta_Gz = np.power(np.abs(SF['Gz'] - aSFi['Gz']), 2)
+            delta_Gx = np.power(np.abs(SF['Gx'] - aSFi['Gx']), 2).sum()
+            delta_Gy = np.power(np.abs(SF['Gy'] - aSFi['Gy']), 2).sum()
+            delta_Gz = np.power(np.abs(SF['Gz'] - aSFi['Gz']), 2).sum()
 
             delta_S_G += delta_Gx + delta_Gy + delta_Gz
             if abs(delta_Gx + delta_Gy + delta_Gz) > 1E-12:
