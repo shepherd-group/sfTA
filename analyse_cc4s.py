@@ -132,6 +132,12 @@ class StructureFactor:
             print(SF_str, file=sys.stderr)
             self.update_timing_report(msg='Twist average dumping')
 
+        if self.options.special:
+            SF_str = self.aSFi[self.ispecial]
+            SF_str = SF_str.to_string(index=False, float_format=fmt)
+            print(SF_str, file=sys.stderr)
+            self.update_timing_report(msg='Special twist dumping')
+
         if self.options.average_write is not None:
             msg = ' Saving average structure factor to:'
             print(f'{msg} {self.options.average_write}', file=sys.stderr)
@@ -251,6 +257,9 @@ def parse_command_line_arguments(
     parser.add_argument('-a', '--average', action='store_true', default=False,
                         dest='average', help='Print out the average structure '
                         'factor in a nice table to the standard error output.')
+    parser.add_argument('-s', '--special', action='store_true', default=False,
+                        dest='special', help='Print out the special twist '
+                        'structure factor in a nice table.')
     parser.add_argument('-e', '--mp2', action='store_true', default=False,
                         dest='mp2', help='Pull the MP2 energies and print out '
                         'as a table to the standard error output.')
@@ -263,7 +272,7 @@ def parse_command_line_arguments(
                         'structure factor twist averaging and select the '
                         'special twist angle by performing an anisotropic '
                         'twist averaging scheme.')
-    parser.add_argument('-s', '--skip-sfta', action='store_true',
+    parser.add_argument('-k', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
     parser.add_argument('directories', nargs='+', help='Paths containing '
