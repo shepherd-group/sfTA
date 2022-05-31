@@ -168,8 +168,8 @@ class StructureFactor:
 
         self.end_timing_report()
 
-        print('\n Found Special Twist Angle:', file=sys.stderr)
-        print(f' {self.directories[self.ispecial]}\n', file=sys.stderr)
+        print(f'\nFound Special Twist Angle: {self.ispecial}', file=sys.stderr)
+        print(f'Path: {self.directories[self.ispecial]}\n', file=sys.stderr)
 
     def update_timing_report(self, msg: str) -> None:
         ''' Perform the calculation of the elapsed time for a given
@@ -302,8 +302,9 @@ def parse_command_line_arguments(
 
 
 def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
-            raw_aSF: List[Dataframe],
-            SF: Dataframe, ispecial: int) -> None:
+            raw_aSF: List[Dataframe], SF: Dataframe, ispecial: int,
+            anisotropic: bool = False,
+        ) -> None:
     ''' Performs all the plotting that can occur based on user input.
     This could be either the individual structure factors, the average
     structure factor and the special twist. Or the variance of the average
@@ -327,6 +328,13 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
     ispecial : integer
         The index of the special twist angle. The index is pythonic and
         matches the various lists used throughout.
+    anisotropic : bool, default=False
+        Controls whether the structure factor averaging
+        is done with or with G vector averaging/matching.
+
+    Returns
+    -------
+    None.
     '''
     font = {'family': 'serif', 'sans-serif': 'Computer Modern Roman'}
     mpl.rc('font', **font)
