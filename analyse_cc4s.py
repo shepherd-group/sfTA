@@ -15,17 +15,18 @@ More details can be found in: https://doi.org/10.1038/s43588-021-00165-1
 import os
 import sys
 import time
-import yaml
-import typing
-import warnings
 import argparse
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-nparray = typing.TypeVar('np.ndarray')
-pddataframe = typing.TypeVar('pd.core.frame.DataFrame')
+from warnings import warn
+from yaml import safe_load
+from typing import TypeVar, List, Tuple, Type
+
+Array = TypeVar('np.ndarray')
+Dataframe = TypeVar('pd.core.frame.DataFrame')
 
 
 class StructureFactor:
@@ -67,7 +68,7 @@ class StructureFactor:
     end_timing_report()
         Close out the timing report and print out to the user.
     '''
-    def __init__(self, clargs: typing.List[str], fmt: str = '%24.16f') -> None:
+    def __init__(self, clargs: List[str], fmt: str = '%24.16f') -> None:
         ''' Run the general structure factor analysis based on the user
         provided command line arguments.
 
@@ -109,14 +110,16 @@ class StructureFactor:
         Gvector_files, Coulomb_files, S_G_files = find_SF_outputs(directories)
         self.update_timing_report(msg='Structure factor output search')
 
-        sf_tuple = read_and_average_SF(Gvector_files, Coulomb_files, S_G_files)
+        sf_tuple = read_and_average_SF(Gvector_files, Coulomb_files, S_G_files,
+                                       self.options.anisotropic)
         self.update_timing_report(msg='Structure factor parsing and analysis')
 
         self.SFi, self.aSFi, self.aSF = sf_tuple
 
         use_weighted_residuals = self.options.weighted_residuals
         self.ispecial = find_special_twist_angle(self.aSFi, self.aSF,
-                                                 use_weighted_residuals)
+                                                 use_weighted_residuals,
+                                                 self.options.anisotropic)
         self.update_timing_report(msg='Special twist analysis')
 
         if self.options.legacy_write is not None:
@@ -194,8 +197,8 @@ class StructureFactor:
 
 
 def parse_command_line_arguments(
-            arguments: typing.List[str],
-        ) -> typing.Type[argparse.ArgumentParser]:
+            arguments: List[str],
+        ) -> Type[argparse.ArgumentParser]:
     ''' Parse command-line arguments.
 
     Parameters
@@ -255,6 +258,11 @@ def parse_command_line_arguments(
                         default=False, dest='weighted_residuals', help='Use '
                         'a weight 1/|G|^2 for the difference when calculating '
                         'the residuals to find the special twist angle.')
+    parser.add_argument('-n', '--anisotropic', action='store_true',
+                        default=False, dest='anisotropic', help='Perform '
+                        'structure factor twist averaging and select the '
+                        'special twist angle by performing an anisotropic '
+                        'twist averaging scheme.')
     parser.add_argument('-s', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
@@ -264,7 +272,7 @@ def parse_command_line_arguments(
 
     options = parser.parse_args(arguments)
 
-    def __ext_check(filename: str, ext: str) -> str:
+    def _ext_check(filename: str, ext: str) -> str:
         ''' A private function to ensure user provided
         filenames have the corresponding extension.
         '''
@@ -272,21 +280,21 @@ def parse_command_line_arguments(
             filename += ext
         return filename
 
-    options.average_write = __ext_check(options.average_write, '.csv')
-    options.special_write = __ext_check(options.special_write, '.csv')
-    options.single_write = __ext_check(options.single_write, '.csv')
-    options.mp2_write = __ext_check(options.mp2_write, '.csv')
-    options.legacy_write = __ext_check(options.legacy_write, '.csv')
-    options.sfta_plot = __ext_check(options.sfta_plot, '.png')
-    options.difference_plot = __ext_check(options.difference_plot, '.png')
-    options.variance_plot = __ext_check(options.variance_plot, '.png')
+    options.average_write = _ext_check(options.average_write, '.csv')
+    options.special_write = _ext_check(options.special_write, '.csv')
+    options.single_write = _ext_check(options.single_write, '.csv')
+    options.mp2_write = _ext_check(options.mp2_write, '.csv')
+    options.legacy_write = _ext_check(options.legacy_write, '.csv')
+    options.sfta_plot = _ext_check(options.sfta_plot, '.png')
+    options.difference_plot = _ext_check(options.difference_plot, '.png')
+    options.variance_plot = _ext_check(options.variance_plot, '.png')
 
     return options
 
 
 def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
-            raw_aSF: typing.List[pddataframe],
-            SF: pddataframe, ispecial: int) -> None:
+            raw_aSF: List[Dataframe],
+            SF: Dataframe, ispecial: int) -> None:
     ''' Performs all the plotting that can occur based on user input.
     This could be either the individual structure factors, the average
     structure factor and the special twist. Or the variance of the average
@@ -439,8 +447,8 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
 
 
 def clean_paths_and_simple_checks(
-            directories: typing.List[str],
-        ) -> typing.List[str]:
+            directories: List[str],
+        ) -> List[str]:
     ''' Perform some simple pre checks on the user provided directories.
 
     Parameters
@@ -472,12 +480,12 @@ def clean_paths_and_simple_checks(
             removed_paths += path + '\n'
 
     if len(cleaned_directories) != len(directories):
-        warnings.warn(f'\nNon-directory paths provided: {removed_paths}'
-                      'These are removed!\n', stacklevel=2)
+        warn(f'\nNon-directory paths provided: {removed_paths}'
+             'These are removed!\n', stacklevel=2)
 
     if len(cleaned_directories) != 100:
-        warnings.warn(f'\nThere are {len(cleaned_directories)},'
-                      ' not 100 calculations!\n', stacklevel=2)
+        warn(f'\nThere are {len(cleaned_directories)},'
+             ' not 100 calculations!\n', stacklevel=2)
 
     if np.unique(directories).shape[0] != len(directories):
         raise RuntimeError('Repeated directories found!')
@@ -485,7 +493,7 @@ def clean_paths_and_simple_checks(
     return cleaned_directories
 
 
-def find_yaml_outs(directories: typing.List[str]) -> typing.List[str]:
+def find_yaml_outs(directories: List[str]) -> List[str]:
     ''' Search through the user provided directories and find the
     relevant yaml energy out files containing energy data.
 
@@ -532,12 +540,12 @@ def get_yaml_as_dict(yaml_file: str) -> dict:
         A dictionary of the cc4s data.
     '''
     with open(yaml_file, 'r') as yaml_stream:
-        yaml_dict = yaml.safe_load(yaml_stream)
+        yaml_dict = safe_load(yaml_stream)
 
     return yaml_dict
 
 
-def extract_mp2_from_yaml(yaml_out_files: typing.List[str]) -> pddataframe:
+def extract_mp2_from_yaml(yaml_out_files: List[str]) -> Dataframe:
     ''' Collect the data yaml out files and return the relevent
     energy data from these files.
 
@@ -556,7 +564,7 @@ def extract_mp2_from_yaml(yaml_out_files: typing.List[str]) -> pddataframe:
     RuntimeError
         When a cc4s yaml logfile is absent from a directory.
     '''
-    def __ekey_check(cstep: str, nkey: str, ekey: str) -> bool:
+    def _ekey_check(cstep: str, nkey: str, ekey: str) -> bool:
         ''' A private function to check the yaml for an energy key '''
         iskey = False
 
@@ -574,7 +582,7 @@ def extract_mp2_from_yaml(yaml_out_files: typing.List[str]) -> pddataframe:
         mp2_df['Twist'].append(imp2+1)
 
         for step in steps:
-            if __ekey_check(step, 'CoupledCluster', 'correlation'):
+            if _ekey_check(step, 'CoupledCluster', 'correlation'):
                 if imp2 == 0:
                     mp2_df['Ec'], mp2_df['Ed'], mp2_df['Ex'] = [], [], []
 
@@ -582,13 +590,13 @@ def extract_mp2_from_yaml(yaml_out_files: typing.List[str]) -> pddataframe:
                 mp2_df['Ed'].append(step['out']['energy']['direct'])
                 mp2_df['Ex'].append(step['out']['energy']['exchange'])
 
-            if __ekey_check(step, 'FiniteSizeCorrection', 'correction'):
+            if _ekey_check(step, 'FiniteSizeCorrection', 'correction'):
                 if imp2 == 0:
                     mp2_df['FSC'] = []
 
                 mp2_df['FSC'].append(step['out']['energy']['correction'])
 
-            if __ekey_check(step, 'BasisSetCorrection', 'correction'):
+            if _ekey_check(step, 'BasisSetCorrection', 'correction'):
                 if imp2 == 0:
                     mp2_df['BSC'] = []
 
@@ -606,8 +614,8 @@ def extract_mp2_from_yaml(yaml_out_files: typing.List[str]) -> pddataframe:
 
 
 def find_SF_outputs(
-            directories: typing.List[str],
-        ) -> typing.Tuple[typing.List[str]]:
+            directories: List[str],
+        ) -> Tuple[List[str]]:
     ''' Search through the user provided directories and find the
     relevenant outputs for sFTA.
 
@@ -652,7 +660,10 @@ def find_SF_outputs(
     return Gvector_files, Coulomb_files, S_G_files
 
 
-def read_and_generate_Gvector_magnitudes(Gvector_file: str) -> nparray:
+def read_and_generate_Gvector_magnitudes(
+            Gvector_file: str,
+            anisotropic: bool = False,
+        ) -> Array:
     ''' Read in a GridVectors.elements file generated by cc4s and calculate the
     G magnitudes for sFTA.
 
@@ -660,21 +671,27 @@ def read_and_generate_Gvector_magnitudes(Gvector_file: str) -> nparray:
     ----------
     Gvector_file : string
         A file which contains the G vectors.
+    anisotropic : bool, default=False
+        If true, return the G vectors not the G magnitudes.
 
     Returns
     -------
     G : :class:`numpy.ndarray`
         An array of the G magnitudes.
+    g_xyz : :class:`numpy.ndarray`
+        The vector version of G, for use in anisotropic twist averaging.
     '''
     raw_g_xyz = np.loadtxt(Gvector_file, dtype=np.float64)
     N_G = int(raw_g_xyz.shape[0] / 3)
     g_xyz = raw_g_xyz.reshape((N_G, 3))
-    G = np.sqrt(np.einsum('ij,ij->i', g_xyz, g_xyz))
 
-    return G
+    if anisotropic:
+        return g_xyz
+
+    return np.sqrt(np.einsum('ij,ij->i', g_xyz, g_xyz))
 
 
-def read_Vg(Coulomb_files: str) -> nparray:
+def read_Vg(Coulomb_files: str) -> Array:
     ''' Read in a CoulombPotenial.elements file generated by cc4s.
 
     Parameters
@@ -692,7 +709,7 @@ def read_Vg(Coulomb_files: str) -> nparray:
     return V_G
 
 
-def read_Sg(S_G_file: str) -> nparray:
+def read_Sg(S_G_file: str) -> Array:
     ''' Read in a SF.elements file generated by cc4s.
 
     Parameters
@@ -711,10 +728,11 @@ def read_Sg(S_G_file: str) -> nparray:
 
 
 def read_and_average_SF(
-            Gvector_files: typing.List[str],
-            Coulomb_files: typing.List[str],
-            S_G_files: typing.List[str]
-        ) -> typing.Tuple[typing.List[pddataframe], pddataframe]:
+            Gvector_files: List[str],
+            Coulomb_files: List[str],
+            S_G_files: List[str],
+            anisotropic: bool = False,
+        ) -> Tuple[List[Dataframe], Dataframe]:
     ''' Loop through the relevant files of structure factors and calculate
     the average structure factor.
 
@@ -726,6 +744,9 @@ def read_and_average_SF(
         A list of files with the Coulomb energy data.
     S_G_files : list of strings
         A list of files with the S_G data.
+    anisotropic : bool, default=False
+        Controls whether the structure factor averaging
+        is done with or with G vector averaging/matching.
 
     Returns
     -------
@@ -743,37 +764,66 @@ def read_and_average_SF(
     for files in zip(Gvector_files, Coulomb_files, S_G_files):
         aSFi = pd.DataFrame()
 
-        G = read_and_generate_Gvector_magnitudes(files[0]).round(10)
-        V_G = read_Vg(files[1])
-        S_G = read_Sg(files[2])
-        SV_G = S_G*V_G
-        SFi = pd.DataFrame({'G': G, 'V_G': V_G, 'S_G': S_G, 'S_G*V_G': SV_G})
-        raw_SF.append(SFi)
+        G = read_and_generate_Gvector_magnitudes(files[0], anisotropic)
 
-        group = SFi.groupby('G')
-        aSFi['S_G'] = group['S_G'].mean()
-        aSFi['S_G_error'] = group['S_G'].sem()
-        aSFi['S_G*V_G'] = group['S_G*V_G'].sum()
-        aSFi['V_G'] = group['V_G'].sum()
-        aSFi.reset_index(drop=False, inplace=True)
-        aSFi.sort_values(by='G', inplace=True)
-        raw_aSF.append(aSFi)
+        if anisotropic:
+            Gkxyz = ['Gx', 'Gy', 'Gz']
+            SFi = pd.DataFrame({
+                    'index': np.arange(G[:, 0].shape[0]),
+                    'Gx': G[:, 0],
+                    'Gy': G[:, 1],
+                    'Gz': G[:, 2],
+                })
 
-    group = pd.concat(raw_SF).groupby('G')
+            SFi['V_G'] = read_Vg(files[1])
+            SFi['S_G'] = read_Sg(files[2])
+
+            raw_SF.append(SFi)
+        else:
+            SFi = pd.DataFrame({
+                    'G': G.round(10),
+                })
+
+            SFi['V_G'] = read_Vg(files[1])
+            SFi['S_G'] = read_Sg(files[2])
+            SFi['S_G*V_G'] = SFi['V_G']*SFi['S_G']
+
+            raw_SF.append(SFi)
+
+            group = SFi.groupby('G')
+            aSFi['S_G'] = group['S_G'].mean()
+            aSFi['S_G_error'] = group['S_G'].sem()
+            aSFi['S_G*V_G'] = group['S_G*V_G'].sum()
+            aSFi['V_G'] = group['V_G'].sum()
+            aSFi.reset_index(drop=False, inplace=True)
+            aSFi.sort_values(by='G', inplace=True)
+            raw_aSF.append(aSFi)
+
+    if anisotropic:
+        group = pd.concat(raw_SF).groupby('index')
+        SF[Gkxyz] = group[Gkxyz].mean()
+        SF[[f'{k}_error' for k in Gkxyz]] = group[Gkxyz].sem()
+    else:
+        group = pd.concat(raw_SF).groupby('G')
+
     SF['S_G'] = group['S_G'].mean()
     SF['S_G_error'] = group['S_G'].sem()
-    SF['S_G*V_G'] = group['S_G*V_G'].sum()/len(Coulomb_files)
     SF['V_G'] = group['V_G'].sum()/len(Coulomb_files)
     SF.reset_index(drop=False, inplace=True)
-    SF.sort_values(by='G', inplace=True)
+
+    if anisotropic:
+        raw_aSF = raw_SF
+    else:
+        SF.sort_values(by='G', inplace=True)
 
     return (raw_SF, raw_aSF, SF)
 
 
 def find_special_twist_angle(
-            raw_aSF: typing.List[pddataframe],
-            SF: pddataframe,
-            use_weighted_residuals: bool,
+            raw_aSF: List[Dataframe],
+            SF: Dataframe,
+            use_weighted_residuals: bool = False,
+            anisotropic: bool = False,
         ) -> int:
     ''' Find the twist angle corresponding to the minimum residual
     between the twist averaged S_G and a given S_G.
@@ -784,9 +834,12 @@ def find_special_twist_angle(
         A list of all the individual average structure factors.
     SF : :class:`pandas.DataFrame`
         A data frame of the average structure factor.
-    use_weighted_residuals : bool
+    use_weighted_residuals : bool, default=False
         Controls whether the difference is weighted by the 1/|G|^2 values
         when calculating the residual.
+    anisotropic : bool, default=False
+        Controls whether the structure factor averaging
+        is done with or with G vector averaging/matching.
 
     Returns
     -------
@@ -805,23 +858,33 @@ def find_special_twist_angle(
     for aSFi in raw_aSF:
         delta_S_G = np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2)
 
+        if anisotropic:
+            delta_Gx = np.power(np.abs(SF['Gx'] - aSFi['Gx']), 2)
+            delta_Gy = np.power(np.abs(SF['Gy'] - aSFi['Gy']), 2)
+            delta_Gz = np.power(np.abs(SF['Gz'] - aSFi['Gz']), 2)
+
+            delta_S_G += delta_Gx + delta_Gy + delta_Gz
+            if abs(delta_Gx + delta_Gy + delta_Gz) > 1E-12:
+                warn('The \\vector{G} residual is non-zero!', stacklevel=2)
+
         if use_weighted_residuals:
             delta_S_G /= np.power(np.abs(SF['S_G']), 2)
 
         residuals.append(delta_S_G.sum())
 
-        if not np.array_equal(aSFi['G'], SF['G']):
-            raise RuntimeError('G value arrays are not equivlent between'
-                               'the average SF and an individual SF.'
-                               'This should not happen!')
+        if not anisotropic:
+            if not np.array_equal(aSFi['G'], SF['G']):
+                raise RuntimeError('G value arrays are not equivlent between'
+                                   'the average SF and an individual SF.'
+                                   'This should not happen!')
 
     ispecial = np.argmin(residuals)
 
     return ispecial
 
 
-def write_sfTA_csv(csv_file: str, directories: typing.List[str],
-                   raw_SF: typing.List[pddataframe]) -> None:
+def write_sfTA_csv(csv_file: str, directories: List[str],
+                   raw_SF: List[Dataframe]) -> None:
     ''' Write out the raw structure factor data in a format
     which is ammendable to sfTA.py.
 
@@ -853,7 +916,7 @@ def write_sfTA_csv(csv_file: str, directories: typing.List[str],
 
 
 def write_individual_twist_average_csv(
-            single_write: str, raw_aSF: typing.List[pddataframe],
+            single_write: str, raw_aSF: List[Dataframe],
         ) -> None:
     ''' Write out the average of the individual twist angles to a csv file.
 
@@ -875,7 +938,7 @@ def write_individual_twist_average_csv(
     print(f' Saving individual averages to: {single_write}', file=sys.stderr)
 
 
-def main(arguments: typing.List[str]) -> None:
+def main(arguments: List[str]) -> None:
     ''' Run structure factor twist averaging on cc4s outputs.
 
     Parameters
