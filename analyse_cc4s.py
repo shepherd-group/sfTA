@@ -974,9 +974,14 @@ def write_sfTA_csv(csv_file: str, directories: List[str],
 
     csv_SF, csv_mp = [], {'Twist angle Num': [], 'directory': []}
     for i, (SFi, directory) in enumerate(zip(raw_SF, directories)):
-        itwist = np.repeat(i+1, SFi['G'].shape[0])
+        if 'G' in aSFi.columns:
+            itwist = np.repeat(i+1, SFi['G'].shape[0])
+            dkeys = ['G', 'V_G', 'S_G']
+        else:
+            itwist = np.repeat(i+1, SFi['Gx'].shape[0])
+            dkeys = ['Gx', 'Gy', 'Gz', 'V_G', 'S_G']
         oSFi = pd.DataFrame({'Twist angle Num': itwist})
-        oSFi[['G', 'V_G', 'S_G']] = SFi[['G', 'V_G', 'S_G']]
+        oSFi[dkeys] = SFi[dkeys]
         csv_SF.append(oSFi.sort_values(by='G').reset_index(drop=True))
 
         csv_mp['Twist angle Num'].append(i+1)
@@ -1003,7 +1008,10 @@ def write_individual_twist_average_csv(
     individual_averages = []
 
     for i, aSFi in enumerate(raw_aSF):
-        itwist = np.repeat(i+1, np.unique(aSFi['G']).shape[0])
+        if 'G' in aSFi.columns:
+            itwist = np.repeat(i+1, np.unique(aSFi['G']).shape[0])
+        else:
+            itwist = np.repeat(i+1, np.unique(aSFi['Gx']).shape[0])
         aSFi.insert(0, 'Twist angle Num', itwist)
         individual_averages.append(aSFi)
 
