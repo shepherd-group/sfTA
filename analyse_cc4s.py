@@ -156,7 +156,7 @@ class StructureFactor:
         if any(k is not None for k in plot_names):
             plot_SF(self.options.sfta_plot, self.options.difference_plot,
                     self.options.variance_plot, self.aSFi,
-                    self.aSF, self.ispecial)
+                    self.aSF, self.ispecial, self.options.anisotropic)
             self.update_timing_report(msg='Structure factor plotting')
 
         if self.options.special_write is not None:
@@ -347,44 +347,100 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
     if sfta_plot is not None:
         plt.clf()
 
-        for i, aSFi in enumerate(raw_aSF):
-            plt.errorbar(
-                    aSFi['G'],
-                    aSFi['S_G'],
-                    aSFi['S_G_error'],
-                    label='individual twists' if i == 1 else '',
-                    color='#02a642',
+        if anisotropic:
+            sfta_plot = sfta_plot.replace('png', 'pdf')
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d', computed_zorder=False)
+
+            S_G_min = 0.25*SF[SF['Gz']==0]['S_G'].min()
+
+            for i, aSFi in enumerate(raw_aSF):
+                z0 = aSFi['Gz']==0.0
+                ax.scatter(
+                        aSFi.loc[z0, 'Gx'],
+                        aSFi.loc[z0, 'Gy'],
+                        aSFi.loc[z0, 'S_G'],
+                        label='individual' if i == 1 else '',
+                        color='#02a642',
+                        s=np.abs(aSFi.loc[z0, 'S_G']/S_G_min),
+                        marker='^',
+                        zorder=2,
+                    )
+
+                if i == ispecial:
+                    ax.scatter(
+                            aSFi.loc[z0, 'Gx'],
+                            aSFi.loc[z0, 'Gy'],
+                            aSFi.loc[z0, 'S_G'],
+                            label='special',
+                            color='#f26003',
+                            s=np.abs(aSFi.loc[z0, 'S_G']/S_G_min),
+                            marker='o',
+                            edgecolors='k',
+                            linewidths=0.1,
+                            zorder=15,
+                        )
+
+            z0 = SF['Gz']==0.0
+            ax.scatter(
+                    SF.loc[z0, 'Gx'],
+                    SF.loc[z0, 'Gy'],
+                    SF.loc[z0, 'S_G'],
+                    label='averaged',
+                    color='#2c43fc',
+                    s=np.abs(SF.loc[z0, 'S_G']/S_G_min),
+                    marker='x',
+                    zorder=16,
                 )
 
-            if i == ispecial:
+            ax.set_xlabel(r'$\vec{G}_x$')
+            ax.set_ylabel(r'$\vec{G}_y$')
+            ax.set_zlabel(r'$S(\vec{G})$')
+            ax.view_init(8, -55)
+            plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=3,
+                       fontsize=6, handlelength=1.0, handletextpad=0.1)
+            print(' Saving structure factor plot to: '
+                  f'{sfta_plot}', file=sys.stderr)
+            plt.savefig(sfta_plot, bbox_inches='tight')
+        else:
+            for i, aSFi in enumerate(raw_aSF):
                 plt.errorbar(
                         aSFi['G'],
                         aSFi['S_G'],
                         aSFi['S_G_error'],
-                        label='special twist',
-                        color='#f26003',
-                        marker='o',
-                        ls='--',
-                        markeredgecolor='k',
-                        markeredgewidth=1.0,
-                        zorder=15,
+                        label='individual twists' if i == 1 else '',
+                        color='#02a642',
                     )
 
-        plt.errorbar(
-                SF['G'],
-                SF['S_G'],
-                SF['S_G_error'],
-                label='twist averaged',
-                color='#2c43fc',
-                zorder=10,
-            )
+                if i == ispecial:
+                    plt.errorbar(
+                            aSFi['G'],
+                            aSFi['S_G'],
+                            aSFi['S_G_error'],
+                            label='special twist',
+                            color='#f26003',
+                            marker='o',
+                            ls='--',
+                            markeredgecolor='k',
+                            markeredgewidth=1.0,
+                            zorder=15,
+                        )
 
-        plt.xlabel('G')
-        plt.ylabel('S(G)')
-        plt.legend(loc='best', ncol=1, handlelength=1.0, handletextpad=0.1)
-        print(' Saving structure factor plot to: '
-              f'{sfta_plot}', file=sys.stderr)
-        plt.savefig(sfta_plot, bbox_inches='tight')
+            plt.errorbar(
+                    SF['G'],
+                    SF['S_G'],
+                    SF['S_G_error'],
+                    label='twist averaged',
+                    color='#2c43fc',
+                    zorder=10,
+                )
+
+            plt.xlabel('G')
+            plt.ylabel('S(G)')
+            plt.legend(loc='best', ncol=1, handlelength=1.0, handletextpad=0.1)
+            print(' Saving structure factor plot to: '
+                  f'{sfta_plot}', file=sys.stderr)
+            plt.savefig(sfta_plot, bbox_inches='tight')
 
     if difference_plot is not None:
         plt.clf()
