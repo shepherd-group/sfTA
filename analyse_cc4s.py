@@ -117,10 +117,25 @@ class StructureFactor:
         self.SFi, self.aSFi, self.aSF = sf_tuple
 
         use_weighted_residuals = self.options.weighted_residuals
-        self.ispecial = find_special_twist_angle(self.aSFi, self.aSF,
-                                                 use_weighted_residuals,
-                                                 self.options.anisotropic)
+        special_data = find_special_twist_angle(self.aSFi, self.aSF,
+                                                use_weighted_residuals,
+                                                self.options.anisotropic)
+        self.ispecial, residuals = special_data
         self.update_timing_report(msg='Special twist analysis')
+
+        residual_report = self.options.print_residuals
+        if self.options.residual_write is not None or residual_report:
+            residual_df = pd.DataFrame({
+                    'Twist': np.arange(1, len(self.directories)+1),
+                    'Path': self.directories,
+                    'Residual': residuals,
+                })
+            if self.options.residual_write is not None:
+                residual_df.to_csv(self.options.residual_write, index=False)
+                self.update_timing_report(msg='Residual saving')
+            if residual_report:
+                print(residual_df.to_string(index=False, float_format=fmt))
+                self.update_timing_report(msg='Residual reporting')
 
         if self.options.legacy_write is not None:
             legacy_output = self.options.legacy_write
@@ -235,6 +250,9 @@ def parse_command_line_arguments(
     parser.add_argument('-ew', '--mp2-write', action='store', default=None,
                         type=str, dest='mp2_write', help='A file to write the '
                         'MP2 energies to from the individual calculations.')
+    parser.add_argument('-er', '--residual-write', action='store',
+                        default=None, type=str, dest='residual_write', help=''
+                        'A file to write the residuals to in a csv format.')
     parser.add_argument('-lw', '--legacy-write', action='store', default=None,
                         type=str, dest='legacy_write', help='Provide a file '
                         'name to store the individual structure factor data '
@@ -272,6 +290,10 @@ def parse_command_line_arguments(
                         'structure factor twist averaging and select the '
                         'special twist angle by performing an anisotropic '
                         'twist averaging scheme.')
+    parser.add_argument('-r', '--print-residuals', action='store_true',
+                        default=False, dest='print_residuals', help='Report '
+                        'the residuals from the structure factor analysis '
+                        'to the standard output stream.')
     parser.add_argument('-k', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
@@ -293,6 +315,7 @@ def parse_command_line_arguments(
     options.special_write = _ext_check(options.special_write, '.csv')
     options.single_write = _ext_check(options.single_write, '.csv')
     options.mp2_write = _ext_check(options.mp2_write, '.csv')
+    options.residual_write = _ext_check(options.residual_write, '.csv')
     options.legacy_write = _ext_check(options.legacy_write, '.csv')
     options.sfta_plot = _ext_check(options.sfta_plot, '.png')
     options.difference_plot = _ext_check(options.difference_plot, '.png')
@@ -303,8 +326,7 @@ def parse_command_line_arguments(
 
 def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
             raw_aSF: List[Dataframe], SF: Dataframe, ispecial: int,
-            anisotropic: bool = False,
-        ) -> None:
+            anisotropic: bool = False) -> None:
     ''' Performs all the plotting that can occur based on user input.
     This could be either the individual structure factors, the average
     structure factor and the special twist. Or the variance of the average
@@ -352,10 +374,10 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
             fig = plt.figure()
             ax = fig.add_subplot(111, projection='3d', computed_zorder=False)
 
-            S_G_min = 0.25*SF[SF['Gz']==0]['S_G'].min()
+            S_G_min = 0.25*SF[SF['Gz'] == 0]['S_G'].min()
 
             for i, aSFi in enumerate(raw_aSF):
-                z0 = aSFi['Gz']==0.0
+                z0 = aSFi['Gz'] == 0.0
                 ax.scatter(
                         aSFi.loc[z0, 'Gx'],
                         aSFi.loc[z0, 'Gy'],
@@ -381,7 +403,7 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
                             zorder=15,
                         )
 
-            z0 = SF['Gz']==0.0
+            z0 = SF['Gz'] == 0.0
             ax.scatter(
                     SF.loc[z0, 'Gx'],
                     SF.loc[z0, 'Gy'],
@@ -897,7 +919,7 @@ def find_special_twist_angle(
             SF: Dataframe,
             use_weighted_residuals: bool = False,
             anisotropic: bool = False,
-        ) -> int:
+        ) -> Tuple[int, List[float]]:
     ''' Find the twist angle corresponding to the minimum residual
     between the twist averaged S_G and a given S_G.
 
@@ -919,9 +941,13 @@ def find_special_twist_angle(
     ispecial : integer
         The index of the special twist angle. The index is pythonic and
         matches the various lists used throughout.
+    residuals : list of floats
+        The residuals for the provided structure factors.
 
     Raises
     ------
+    RuntimeError
+        If the G vector residual is non-zero
     RuntimeError
         When the average and individual structure factor data sets
         have different G values.
@@ -937,8 +963,8 @@ def find_special_twist_angle(
             delta_Gz = np.power(np.abs(SF['Gz'] - aSFi['Gz']), 2).sum()
 
             delta_S_G += delta_Gx + delta_Gy + delta_Gz
-            if abs(delta_Gx + delta_Gy + delta_Gz) > 1E-12:
-                warn('The \\vector{G} residual is non-zero!', stacklevel=2)
+            if (abs(delta_Gx) + abs(delta_Gy) + abs(delta_Gz)) > 1E-12:
+                raise RuntimeError('The \\vector{G} residual is non-zero!')
 
         if use_weighted_residuals:
             delta_S_G /= np.power(np.abs(SF['S_G']), 2)
@@ -953,7 +979,7 @@ def find_special_twist_angle(
 
     ispecial = np.argmin(residuals)
 
-    return ispecial
+    return ispecial, residuals
 
 
 def write_sfTA_csv(csv_file: str, directories: List[str],
@@ -974,7 +1000,7 @@ def write_sfTA_csv(csv_file: str, directories: List[str],
 
     csv_SF, csv_mp = [], {'Twist angle Num': [], 'directory': []}
     for i, (SFi, directory) in enumerate(zip(raw_SF, directories)):
-        if 'G' in aSFi.columns:
+        if 'G' in SFi.columns:
             itwist = np.repeat(i+1, SFi['G'].shape[0])
             dkeys = ['G', 'V_G', 'S_G']
         else:
