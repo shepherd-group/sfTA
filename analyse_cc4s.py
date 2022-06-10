@@ -131,10 +131,13 @@ class StructureFactor:
                     'Residual': residuals,
                 })
             if self.options.residual_write is not None:
+                msg = ' Saving residuals data to:'
+                print(f'{msg} {self.options.residual_write}', file=sys.stderr)
                 residual_df.to_csv(self.options.residual_write, index=False)
                 self.update_timing_report(msg='Residual saving')
             if residual_report:
-                print(residual_df.to_string(index=False, float_format=fmt))
+                res_str = residual_df.to_string(index=False, float_format=fmt)
+                print(res_str, file=sys.stderr)
                 self.update_timing_report(msg='Residual reporting')
 
         if self.options.legacy_write is not None:
@@ -250,7 +253,7 @@ def parse_command_line_arguments(
     parser.add_argument('-ew', '--mp2-write', action='store', default=None,
                         type=str, dest='mp2_write', help='A file to write the '
                         'MP2 energies to from the individual calculations.')
-    parser.add_argument('-er', '--residual-write', action='store',
+    parser.add_argument('-rw', '--residual-write', action='store',
                         default=None, type=str, dest='residual_write', help=''
                         'A file to write the residuals to in a csv format.')
     parser.add_argument('-lw', '--legacy-write', action='store', default=None,
@@ -293,7 +296,7 @@ def parse_command_line_arguments(
     parser.add_argument('-r', '--print-residuals', action='store_true',
                         default=False, dest='print_residuals', help='Report '
                         'the residuals from the structure factor analysis '
-                        'to the standard output stream.')
+                        'to the standard error stream.')
     parser.add_argument('-k', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
