@@ -63,6 +63,10 @@ class StructureFactor:
 
     Methods
     -------
+    read_data_and_analyze(directories, msg)
+        A data parsing wrapper for structure factor analysis.
+    structure_factor_linear_combination()
+        A function for combining structure factors in a linear fashion.
     update_timing_report(msg)
         Adds a timing check point to the timing report dictionary.
     end_timing_report()
@@ -107,19 +111,17 @@ class StructureFactor:
         if self.options.skip_sfta:
             return
 
-        Gvector_files, Coulomb_files, S_G_files = find_SF_outputs(directories)
-        self.update_timing_report(msg='Structure factor output search')
+        self.SFi, self.aSFi, self.aSF = self.read_data_and_analyze(directories)
 
-        sf_tuple = read_and_average_SF(Gvector_files, Coulomb_files, S_G_files,
-                                       self.options.anisotropic)
-        self.update_timing_report(msg='Structure factor parsing and analysis')
-
-        self.SFi, self.aSFi, self.aSF = sf_tuple
+        if self.options.addp is not None:
+            self.structure_factor_linear_combination()
 
         use_weighted_residuals = self.options.weighted_residuals
         special_data = find_special_twist_angle(self.aSFi, self.aSF,
                                                 use_weighted_residuals,
-                                                self.options.anisotropic)
+                                                self.options.anisotropic,
+                                                self.options.upper_bound,
+                                                self.options.lower_bound)
         self.ispecial, residuals = special_data
         self.update_timing_report(msg='Special twist analysis')
 
@@ -186,8 +188,105 @@ class StructureFactor:
 
         self.end_timing_report()
 
-        print(f'\nFound Special Twist Angle: {self.ispecial}', file=sys.stderr)
+        print(f'\nFound Special Twist Angle: {self.ispecial} '
+              f'({self.ispecial + 1}) | zero-indexed (one-indexed)',
+              file=sys.stderr)
         print(f'Path: {self.directories[self.ispecial]}\n', file=sys.stderr)
+
+    def read_data_and_analyze(
+                self,
+                directories: List[str],
+                amsg: str = ''
+            ) -> Tuple[List[Dataframe], Dataframe]:
+        ''' A wrapper for finding the ouput files, parsing the output files,
+        and finally performing analysis on the output files. The resulting
+        raw data and analyzed data are returned.
+
+        Parameters
+        ----------
+        directories : list of str
+            The locations of the structure factor data to be collected.
+        amsg : str, default=''
+            A message to append on to the timing report for the collection
+            and analysis of data.
+
+        Returns
+        -------
+        raw_SF : list of :class:`pandas.DataFrame`
+            A list of all the structure factors.
+        raw_aSF : list of :class:`pandas.DataFrame`
+            A list of all the average structure factors
+            for a given twist angle.
+        SF : :class:`pandas.DataFrame`
+            A data frame of the average structure factor.
+        '''
+        output_files = find_SF_outputs(directories)
+        self.update_timing_report(msg=f'Structure factor output search{amsg}')
+        sf_tuple = read_and_average_SF(*output_files, self.options.anisotropic)
+        self.update_timing_report(msg='Structure factor parsing '
+                                  f'and analysis{amsg}')
+        return sf_tuple
+
+    def structure_factor_linear_combination(self) -> None:
+        ''' Calculate the linear combination of two structure factors
+        provided by the user. This is performed for the raw, average individual
+        and twist averaged structure factors. Only the S(G) and S(G) error
+        terms are considered. The addition is defined by the addop parameter
+        and the resulting data is stored in the standard arrays/dataframes.
+
+        Raises
+        ------
+        RuntimeError
+            If the number of directories and addition directories are not
+            the same.
+        RuntimeError
+            If the G values are not the same between the structure factors
+            from the directories and addition directories.
+        '''
+        terminate, fac, sk, ek = False, self.options.addop, 'S_G', 'S_G_error'
+
+        print('Calculating the structure factor as a linear combination of:\n'
+             f'    "directories" + {self.options.addop} x "addp"\n'
+             'The post-analysis S(G) and S(G) errors saved in csv files will '
+             'reflect this!\n', file=sys.stderr)
+
+        if len(self.options.directories) != len(self.options.addp):
+            raise RuntimeError('The provided number of directories '
+                               f'(N={len(directories)}) is not the same '
+                               'as the number of addition directories '
+                               f'(N={len(self.options.addp)})!')
+
+        _FV = lambda TDF: TDF.values.flatten()
+        _SGADD = lambda T1, T2, C: _FV(T1) + C*_FV(T2)
+        _SGPRP = lambda T1, T2, C: (_FV(T1)**2.0 + (C*_FV(T2))**2.0)**0.5
+
+        diff = self.read_data_and_analyze(self.options.addp, amsg=' (-addp)')
+        d0, d1, d2 = diff
+
+        if not np.array_equal(d2['G'], self.aSF['G']):
+            terminate = True
+        else:
+            self.aSF[sk] = _SGADD(self.aSF[sk], d2[sk], fac)
+            self.aSF[ek] = _SGPRP(self.aSF[ek], d2[ek], fac)
+
+        for i in range(len(self.aSFi)):
+            if not np.array_equal(d0[i]['G'], self.SFi[i]['G']):
+                terminate = True
+            else:
+                self.SFi[i][sk] = _SGADD(self.SFi[i][sk], d0[i][sk], fac)
+
+            if not np.array_equal(d1[i]['G'], self.aSFi[i]['G']):
+                terminate = True
+                print(i, directories[i], self.options.addp[i])
+            else:
+                self.aSFi[i][sk] = _SGADD(self.aSFi[i][sk], d1[i][sk], fac)
+                self.aSFi[i][ek] = _SGADD(self.aSFi[i][ek], d1[i][ek], fac)
+
+        if terminate:
+            raise RuntimeError('Structure factors used in addition '
+                               'do not have matching G values!')
+        else:
+            self.update_timing_report(msg='Linear combination of S(G).')
 
     def update_timing_report(self, msg: str) -> None:
         ''' Perform the calculation of the elapsed time for a given
@@ -275,6 +374,33 @@ def parse_command_line_arguments(
                         type=str, dest='variance_plot', help='Provide a file '
                         'name to store the plot of the variance in the '
                         'average structure factor for the G values.')
+    parser.add_argument('-ub', '--upper-bound', action='store', default=None,
+                        type=float, dest='upper_bound', help='Set an upper '
+                        'bound on the G values to use when calculating '
+                        'the special twist, everything equal to or below this '
+                        'is used and everything above is not.')
+    parser.add_argument('-lb', '--lower-bound', action='store', default=None,
+                        type=float, dest='lower_bound', help='Set a lower '
+                        'bound on the G values to use when calculating '
+                        'the special twist, everything equal to or above this '
+                        'is used and everything below is not.')
+    parser.add_argument('-addp', '--addition-paths', nargs='+',
+                        dest='addp', help='Provide a set of structure '
+                        'factor paths with structure factor data that will be '
+                        'used to calculate an addition between two structure '
+                        'factors. To define the addition see the addop '
+                        'parameter. The number of paths must match that of '
+                        'the directories provided for analysis. This option '
+                        'must follow the main analysis directories.')
+    parser.add_argument('-addop', '--addition-operator', default=1.0,
+                        dest='addop', type=float, help='Used to alter the '
+                        'linear combination of the directories structure '
+                        'factors and the additive paths structure factors. For '
+                        'example, one may calculate the binding structure '
+                        'factor for a monolayer and bilayer by providing '
+                        'the bilayer as the directories, the monolayer as the '
+                        'additive path, and the operator as -2.0. The default '
+                        'addition operator is 1.0.')
     parser.add_argument('-a', '--average', action='store_true', default=False,
                         dest='average', help='Print out the average structure '
                         'factor in a nice table to the standard error output.')
@@ -361,6 +487,9 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
     -------
     None.
     '''
+    # TODO - WZV
+    # This function needs to be moved to its own file
+    # and the code should be cleaned/organized better.
     font = {'family': 'serif', 'sans-serif': 'Computer Modern Roman'}
     mpl.rc('font', **font)
     mpl.rc('savefig', dpi=300)
@@ -429,19 +558,17 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
             plt.savefig(sfta_plot, bbox_inches='tight')
         else:
             for i, aSFi in enumerate(raw_aSF):
-                plt.errorbar(
+                plt.plot(
                         aSFi['G'],
                         aSFi['S_G'],
-                        aSFi['S_G_error'],
                         label='individual twists' if i == 1 else '',
                         color='#02a642',
                     )
 
                 if i == ispecial:
-                    plt.errorbar(
+                    plt.plot(
                             aSFi['G'],
                             aSFi['S_G'],
-                            aSFi['S_G_error'],
                             label='special twist',
                             color='#f26003',
                             marker='o',
@@ -476,7 +603,7 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
             plt.errorbar(
                     aSFi['G'],
                     aSFi['S_G'] - SF['S_G'],
-                    np.sqrt(aSFi['S_G_error']**2 + SF['S_G_error']**2),
+                    np.sqrt(0.0*aSFi['S_G_error']**2 + SF['S_G_error']**2),
                     label='individual twists' if i == 1 else '',
                     color='#02a642',
                 )
@@ -485,7 +612,7 @@ def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
                 plt.errorbar(
                         aSFi['G'],
                         aSFi['S_G'] - SF['S_G'],
-                        np.sqrt(aSFi['S_G_error']**2 + SF['S_G_error']**2),
+                        np.sqrt(0.0*aSFi['S_G_error']**2 + SF['S_G_error']**2),
                         label='special twist',
                         color='#f26003',
                         marker='o',
@@ -922,6 +1049,8 @@ def find_special_twist_angle(
             SF: Dataframe,
             use_weighted_residuals: bool = False,
             anisotropic: bool = False,
+            upper_bound: float = None,
+            lower_bound: float = None,
         ) -> Tuple[int, List[float]]:
     ''' Find the twist angle corresponding to the minimum residual
     between the twist averaged S_G and a given S_G.
@@ -938,6 +1067,15 @@ def find_special_twist_angle(
     anisotropic : bool, default=False
         Controls whether the structure factor averaging
         is done with or with G vector averaging/matching.
+    upper_bound : float, default=None
+        Set an upper bound on the G values to use when calculating
+        the residuals to select the special twist angle. Everything
+        equal to or below this value is considered in the residual
+        calculation and everything above is not.
+    lower_bound : float, default=None
+        Similar to uppwer bound, sets a threshold in G, for which
+        the structure factor residual is calculated on. The considered G
+        values are only those equal to or greater than this threshold.
 
     Returns
     -------
@@ -957,8 +1095,33 @@ def find_special_twist_angle(
     '''
     residuals = []
 
+    if upper_bound is not None and lower_bound is not None:
+        _LUMASK = lambda ARR, G, GL, GU: ARR[np.logical_and(G >= GL, G <= GU)]
+        tmsg = f'    {lower_bound:>.4f} =< G =< {upper_bound:>.4f} \n'
+    elif lower_bound is not None:
+        _LUMASK = lambda ARR, G, GL, GU: ARR[G >= GL]
+        tmsg = f'    {lower_bound:>.4f} =< G \n'
+    elif upper_bound is not None:
+        _LUMASK = lambda ARR, G, GL, GU: ARR[G <= GU]
+        tmsg = f'    G =< {upper_bound:>.4f} \n'
+    else:
+        _LUMASK = lambda ARR, G, GL, GU: ARR
+        tmsg = None
+
+    if tmsg is not None:
+        print(f'Truncating structure factor to: \n{tmsg}'
+             'for selecting the special twist!\n', file=sys.stderr)
+
+    mean_G = SF['G'].values.flatten()
+    mean_SG = SF['S_G'].values.flatten()
+    mean_SG = _LUMASK(mean_SG, mean_G, lower_bound, upper_bound)
+
     for aSFi in raw_aSF:
-        delta_S_G = np.power(np.abs(SF['S_G'] - aSFi['S_G']), 2)
+        G = aSFi['G'].values.flatten()
+        SG = aSFi['S_G'].values.flatten()
+        SG = _LUMASK(SG, G, lower_bound, upper_bound)
+
+        delta_S_G = np.power(np.abs(mean_SG - SG), 2)
 
         if anisotropic:
             delta_Gx = np.power(np.abs(SF['Gx'] - aSFi['Gx']), 2).sum()
@@ -970,14 +1133,14 @@ def find_special_twist_angle(
                 raise RuntimeError('The \\vector{G} residual is non-zero!')
 
         if use_weighted_residuals:
-            delta_S_G /= np.power(np.abs(SF['S_G']), 2)
+            delta_S_G /= np.power(np.abs(mean_SG), 2)
 
         residuals.append(delta_S_G.sum())
 
         if not anisotropic:
-            if not np.array_equal(aSFi['G'], SF['G']):
-                raise RuntimeError('G value arrays are not equivlent between'
-                                   'the average SF and an individual SF.'
+            if not np.array_equal(G, mean_G):
+                raise RuntimeError('G value arrays are not equivlent between '
+                                   'the average SF and an individual SF. '
                                    'This should not happen!')
 
     ispecial = np.argmin(residuals)
