@@ -280,7 +280,7 @@ class StructureFactor:
                 print(i, directories[i], self.options.addp[i])
             else:
                 self.aSFi[i][sk] = _SGADD(self.aSFi[i][sk], d1[i][sk], fac)
-                self.aSFi[i][ek] = _SGADD(self.aSFi[i][ek], d1[i][ek], fac)
+                self.aSFi[i][ek] = _SGPRP(self.aSFi[i][ek], d1[i][ek], fac)
 
         if terminate:
             raise RuntimeError('Structure factors used in addition '
