@@ -1152,7 +1152,7 @@ def find_special_twist_angle(
                 raise RuntimeError('The \\vector{G} residual is non-zero!')
 
         if use_weighted_residuals:
-            delta_S_G /= np.power(np.abs(mean_SG), 2)
+            delta_S_G /= np.power(np.abs(mean_G), 2)
 
         residuals.append(delta_S_G.sum())
 
