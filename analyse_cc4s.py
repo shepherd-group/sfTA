@@ -137,6 +137,7 @@ class StructureFactor:
                     'Twist': np.arange(1, len(self.directories)+1),
                     'Path': self.directories,
                     'Residual': residuals,
+                    'Rank': np.argsort(residuals).argsort() + 1,
                 })
             if self.options.residual_write is not None:
                 msg = ' Saving residuals data to:'
