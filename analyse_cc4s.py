@@ -88,6 +88,12 @@ class StructureFactor:
         self.timing_report = {'step ': [], 'note ': [], 'time (min) ': []}
 
         self.options = parse_command_line_arguments(clargs)
+
+        if self.options.order_directories:
+            directories = human_readable_reordering(self.options.directories)
+            self.options.directories = directories
+            self.options.addp = human_readable_reordering(self.options.addp)
+
         directories = self.options.directories
         self.directories = clean_paths_and_simple_checks(directories)
         self.update_timing_report(msg='Input parsing and directory checks')
@@ -427,6 +433,12 @@ def parse_command_line_arguments(
                         default=False, dest='print_residuals', help='Report '
                         'the residuals from the structure factor analysis '
                         'to the standard error stream.')
+    parser.add_argument('-o', '--order-directories', action='store_true',
+                        default=False, dest='order_directories',
+                        help='Attempt to order the provided directories '
+                        'in a human readable fashion. Note, this has not been '
+                        'extensively tested, so use at your own discretion '
+                        'and consider checking the sorted results.')
     parser.add_argument('-k', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
@@ -1216,6 +1228,80 @@ def write_individual_twist_average_csv(
 
     pd.concat(individual_averages).to_csv(single_write, index=False)
     print(f' Saving individual averages to: {single_write}', file=sys.stderr)
+
+
+def human_readable_reordering(los: List[str]) -> List[str]:
+    ''' Attempt to sort a list in a human readable fashion. This is done by
+    first removing all non-numerical characters, and the remaining numerical
+    characters are padded with zeros and inserted back into the original
+    string. Thereafter the sorting procedure is trivial (hopefully).
+
+    Parameters
+    ----------
+    los : list of strings
+        The list of strings to attempt to sort in a human readable fashion.
+
+    Returns
+    -------
+    sorted_los : list of strings
+        The hopefully human sorted list of strings.
+    '''
+    if los is None:
+        return None
+    elif len(los) < 2:
+        return los
+
+    sorted_los = [k for k in los]
+
+    padded_los = []
+    for string in los:
+        numeric_string = ''
+        alphabetical_string = ''
+
+        for character in string:
+            if character.isdigit():
+                numeric_string += character
+                alphabetical_string += ' '
+            else:
+                numeric_string += ' '
+                alphabetical_string += character
+
+        string_lon = numeric_string.split()
+        string_los = alphabetical_string.split()
+        lon_len, los_len = len(string_lon), len(string_los)
+        first_character_is_digit = string[0].isdigit()
+        npad = max([len(number) for number in string_lon]) + 2
+
+        padded_string = ''
+
+        while lon_len > 0 or los_len > 0:
+            if lon_len != 0 and los_len != 0:
+                if first_character_is_digit:
+                    padded_string += string_lon[0].zfill(npad)
+                    string_lon.pop(0)
+                    padded_string += string_los[0]
+                    string_los.pop(0)
+                else:
+                    padded_string += string_los[0]
+                    string_los.pop(0)
+                    padded_string += string_lon[0].zfill(npad)
+                    string_lon.pop(0)
+            elif lon_len != 0 and los_len == 0:
+                for number in string_lon:
+                    padded_string += number.zfill(npad)
+                string_lon = []
+            elif lon_len == 0 and los_len != 0:
+                for sub_string in string_los:
+                    padded_string += sub_string
+                string_los = []
+
+            lon_len, los_len = len(string_lon), len(string_los)
+
+        padded_los.append(padded_string)
+
+    sorted_los = list(np.array(sorted_los)[np.argsort(padded_los)])
+
+    return sorted_los
 
 
 def main(arguments: List[str]) -> None:
