@@ -246,19 +246,24 @@ class StructureFactor:
         terminate, fac, sk, ek = False, self.options.addop, 'S_G', 'S_G_error'
 
         print('Calculating the structure factor as a linear combination of:\n'
-             f'    "directories" + {self.options.addop} x "addp"\n'
-             'The post-analysis S(G) and S(G) errors saved in csv files will '
-             'reflect this!\n', file=sys.stderr)
+              f'    "directories" + {self.options.addop} x "addp"\n'
+              'The post-analysis S(G) and S(G) errors saved in csv files will '
+              'reflect this!\n', file=sys.stderr)
 
         if len(self.options.directories) != len(self.options.addp):
             raise RuntimeError('The provided number of directories '
-                               f'(N={len(directories)}) is not the same '
-                               'as the number of addition directories '
-                               f'(N={len(self.options.addp)})!')
+                               f'(N={len(self.options.directories)}) is '
+                               'not the same as the number of addition '
+                               f'directories (N={len(self.options.addp)})!')
 
-        _FV = lambda TDF: TDF.values.flatten()
-        _SGADD = lambda T1, T2, C: _FV(T1) + C*_FV(T2)
-        _SGPRP = lambda T1, T2, C: (_FV(T1)**2.0 + (C*_FV(T2))**2.0)**0.5
+        def _SGADD(T1: Dataframe, T2: Dataframe, C: float) -> Array:
+            ''' Private function to add two pandas columns with a constant.'''
+            return T1.values.flatten() + C*T2.values.flatten()
+
+        def _SGPRP(T1: Dataframe, T2: Dataframe, C: float) -> Array:
+            ''' Private function to calculate the additive error for _SGADD.'''
+            return (T1.values.flatten()**2.0
+                    + (C*T2.values.flatten())**2.0)**0.5
 
         diff = self.read_data_and_analyze(self.options.addp, amsg=' (-addp)')
         d0, d1, d2 = diff
@@ -277,7 +282,6 @@ class StructureFactor:
 
             if not np.array_equal(d1[i]['G'], self.aSFi[i]['G']):
                 terminate = True
-                print(i, directories[i], self.options.addp[i])
             else:
                 self.aSFi[i][sk] = _SGADD(self.aSFi[i][sk], d1[i][sk], fac)
                 self.aSFi[i][ek] = _SGPRP(self.aSFi[i][ek], d1[i][ek], fac)
@@ -395,8 +399,8 @@ def parse_command_line_arguments(
     parser.add_argument('-addop', '--addition-operator', default=1.0,
                         dest='addop', type=float, help='Used to alter the '
                         'linear combination of the directories structure '
-                        'factors and the additive paths structure factors. For '
-                        'example, one may calculate the binding structure '
+                        'factors and the additive paths structure factors. '
+                        'For example, one may calculate the binding structure '
                         'factor for a monolayer and bilayer by providing '
                         'the bilayer as the directories, the monolayer as the '
                         'additive path, and the operator as -2.0. The default '
@@ -1095,22 +1099,25 @@ def find_special_twist_angle(
     '''
     residuals = []
 
-    if upper_bound is not None and lower_bound is not None:
-        _LUMASK = lambda ARR, G, GL, GU: ARR[np.logical_and(G >= GL, G <= GU)]
-        tmsg = f'    {lower_bound:>.4f} =< G =< {upper_bound:>.4f} \n'
-    elif lower_bound is not None:
-        _LUMASK = lambda ARR, G, GL, GU: ARR[G >= GL]
-        tmsg = f'    {lower_bound:>.4f} =< G \n'
-    elif upper_bound is not None:
-        _LUMASK = lambda ARR, G, GL, GU: ARR[G <= GU]
-        tmsg = f'    G =< {upper_bound:>.4f} \n'
-    else:
-        _LUMASK = lambda ARR, G, GL, GU: ARR
-        tmsg = None
+    def _LUMASK(ARR: Array, G: Array, GL: float, GU: float) -> Array:
+        ''' Private function to apply S(G) masking based on GL/GU.'''
+        if GL is not None and GU is not None:
+            return ARR[np.logical_and(G >= GL, G <= GU)]
+        elif GL is not None:
+            return ARR[G >= GL]
+        elif GU is not None:
+            return ARR[G <= GU]
+        else:
+            return ARR
 
-    if tmsg is not None:
+    if lower_bound is not None or upper_bound is not None:
+        tmsg = '    '
+        tmsg += f'{lower_bound:>.4f} =<' if lower_bound is not None else ''
+        tmsg += ' G '
+        tmsg += f'=< {upper_bound:>.4f}' if upper_bound is not None else ''
+        tmsg += ' \n'
         print(f'Truncating structure factor to: \n{tmsg}'
-             'for selecting the special twist!\n', file=sys.stderr)
+              'for selecting the special twist!\n', file=sys.stderr)
 
     mean_G = SF['G'].values.flatten()
     mean_SG = SF['S_G'].values.flatten()
