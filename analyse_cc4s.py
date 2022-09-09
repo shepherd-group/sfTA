@@ -144,6 +144,8 @@ class StructureFactor:
                 residual_df.to_csv(self.options.residual_write, index=False)
                 self.update_timing_report(msg='Residual saving')
             if residual_report:
+                residual_df[' '] = [' ' for _ in range(len(residuals))]
+                residual_df.loc[self.ispecial, ' '] = '<--- (Minimum)'
                 res_str = residual_df.to_string(index=False, float_format=fmt)
                 print(res_str, file=sys.stderr)
                 self.update_timing_report(msg='Residual reporting')
