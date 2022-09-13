@@ -916,23 +916,25 @@ def read_and_generate_Gvector_magnitudes(
     Gvector_file : string
         A file which contains the G vectors.
     anisotropic : bool, default=False
-        If true, return the G vectors not the G magnitudes.
+        If true, return the G vectors and the G magnitudes.
 
     Returns
     -------
     G : :class:`numpy.ndarray`
-        An array of the G magnitudes.
-    g_xyz : :class:`numpy.ndarray`
-        The vector version of G, for use in anisotropic twist averaging.
+        An array of the G magnitudes, and optionally the G vectors.
     '''
     raw_g_xyz = np.loadtxt(Gvector_file, dtype=np.float64)
     N_G = int(raw_g_xyz.shape[0] / 3)
     g_xyz = raw_g_xyz.reshape((N_G, 3))
 
     if anisotropic:
-        return g_xyz
+        G = np.zeros((N_G, 4), dtype=np.float64)
+        G[:, 0] = np.sqrt(np.einsum('ij,ij->i', g_xyz, g_xyz))
+        G[:, 1:] = g_xyz
+    else:
+        G = np.sqrt(np.einsum('ij,ij->i', g_xyz, g_xyz))
 
-    return np.sqrt(np.einsum('ij,ij->i', g_xyz, g_xyz))
+    return G
 
 
 def read_Vg(Coulomb_files: str) -> Array:
@@ -1008,15 +1010,15 @@ def read_and_average_SF(
     for files in zip(Gvector_files, Coulomb_files, S_G_files):
         aSFi = pd.DataFrame()
 
-        G = read_and_generate_Gvector_magnitudes(files[0], anisotropic)
-
         if anisotropic:
-            Gkxyz = ['Gx', 'Gy', 'Gz']
+            G = read_and_generate_Gvector_magnitudes(files[0], anisotropic)
+            Gkxyz = ['G', 'Gx', 'Gy', 'Gz']
             SFi = pd.DataFrame({
                     'index': np.arange(G[:, 0].shape[0]),
-                    'Gx': G[:, 0],
-                    'Gy': G[:, 1],
-                    'Gz': G[:, 2],
+                    'G': G[:, 0],
+                    'Gx': G[:, 1],
+                    'Gy': G[:, 2],
+                    'Gz': G[:, 3],
                 })
 
             SFi['V_G'] = read_Vg(files[1])
@@ -1024,21 +1026,21 @@ def read_and_average_SF(
 
             raw_SF.append(SFi)
         else:
+            G = read_and_generate_Gvector_magnitudes(files[0], anisotropic)
             SFi = pd.DataFrame({
                     'G': G.round(10),
                 })
 
             SFi['V_G'] = read_Vg(files[1])
             SFi['S_G'] = read_Sg(files[2])
-            SFi['S_G*V_G'] = SFi['V_G']*SFi['S_G']
 
             raw_SF.append(SFi)
 
             group = SFi.groupby('G')
             aSFi['S_G'] = group['S_G'].mean()
             aSFi['S_G_error'] = group['S_G'].sem()
-            aSFi['S_G*V_G'] = group['S_G*V_G'].sum()
             aSFi['V_G'] = group['V_G'].sum()
+            aSFi['N_G'] = group['V_G'].count()
             aSFi.reset_index(drop=False, inplace=True)
             aSFi.sort_values(by='G', inplace=True)
             raw_aSF.append(aSFi)
