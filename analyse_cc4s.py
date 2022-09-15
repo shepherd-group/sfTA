@@ -67,6 +67,8 @@ class StructureFactor:
         A data parsing wrapper for structure factor analysis.
     structure_factor_linear_combination()
         A function for combining structure factors in a linear fashion.
+    do_basic_analysis()
+        A simple wrapper function to save and plot a single structure factor.
     update_timing_report(msg)
         Adds a timing check point to the timing report dictionary.
     end_timing_report()
@@ -115,16 +117,21 @@ class StructureFactor:
                 self.update_timing_report(msg='MP2 energy storing')
 
         if self.options.skip_sfta:
+            self.end_timing_report()
             return
 
         self.SFi, self.aSFi, self.aSF = self.read_data_and_analyze(directories)
 
+        if self.options.basic_analysis is not None:
+            self.do_basic_analysis()
+            self.end_timing_report()
+            return
+
         if self.options.addp is not None:
             self.structure_factor_linear_combination()
 
-        use_weighted_residuals = self.options.weighted_residuals
         special_data = find_special_twist_angle(self.aSFi, self.aSF,
-                                                use_weighted_residuals,
+                                                self.options.weighted_residual,
                                                 self.options.anisotropic,
                                                 self.options.upper_bound,
                                                 self.options.lower_bound)
@@ -301,6 +308,26 @@ class StructureFactor:
         else:
             self.update_timing_report(msg='Linear combination of S(G).')
 
+    def do_basic_analysis(self) -> None:
+        ''' Plot a single provided structure factor and store the structure
+        factor in a csv file.
+
+        Raises
+        ------
+        RuntimeError
+            If there is more than a single twist angle provided.
+        '''
+        if len(self.options.directories) > 1:
+            raise RuntimeError('The basic analysis options "-ba" only works '
+                               'with a single directory, you provided '
+                               f'{len(self.options.directories)}!')
+
+        print(' Saving structure factor data to: '
+              f'{self.options.basic_analysis}.csv', file=sys.stderr)
+        self.aSF.to_csv(f'{self.options.basic_analysis}.csv', index=False)
+        plot_single_SF(self.options.basic_analysis, self.aSF)
+        self.update_timing_report(msg='Basic analysis data storing/plotting')
+
     def update_timing_report(self, msg: str) -> None:
         ''' Perform the calculation of the elapsed time for a given
         process and report the index, time and message for the process
@@ -387,6 +414,13 @@ def parse_command_line_arguments(
                         type=str, dest='variance_plot', help='Provide a file '
                         'name to store the plot of the variance in the '
                         'average structure factor for the G values.')
+    parser.add_argument('-ba', '--basic-analysis', action='store',
+                        default=None, type=str, dest='basic_analysis',
+                        help='Provide a file name to (1) store the structure '
+                        'factor data and (2) plot the corresponding data. '
+                        'If used, only a single calculation may be provided '
+                        'for analysis, and many sfTA related parameters '
+                        'will be ignored.')
     parser.add_argument('-ub', '--upper-bound', action='store', default=None,
                         type=float, dest='upper_bound', help='Set an upper '
                         'bound on the G values to use when calculating '
@@ -423,8 +457,8 @@ def parse_command_line_arguments(
     parser.add_argument('-e', '--mp2', action='store_true', default=False,
                         dest='mp2', help='Pull the MP2 energies and print out '
                         'as a table to the standard error output.')
-    parser.add_argument('-w', '--weighted-residuals', action='store_true',
-                        default=False, dest='weighted_residuals', help='Use '
+    parser.add_argument('-w', '--weighted-residual', action='store_true',
+                        default=False, dest='weighted_residual', help='Use '
                         'a weight 1/|G|^2 for the difference when calculating '
                         'the residuals to find the special twist angle.')
     parser.add_argument('-n', '--anisotropic', action='store_true',
@@ -470,6 +504,49 @@ def parse_command_line_arguments(
     options.variance_plot = _ext_check(options.variance_plot, '.png')
 
     return options
+
+
+def plot_single_SF(plot_name: str, SF: Dataframe) -> None:
+    ''' Creates a simple plot for a single structure factor.
+
+    Parameters
+    ----------
+    plot_name : str
+        A string for the structure factor plot name, default is None in
+        which case no plot is created. The "png" file extension is added.
+    SF : :class:`pandas.DataFrame`
+        A data frame of the structure factor under consideration.
+
+    Returns
+    -------
+    None.
+    '''
+    font = {'family': 'serif', 'sans-serif': 'Computer Modern Roman'}
+    mpl.rc('font', **font)
+    mpl.rc('savefig', dpi=300)
+    mpl.rc('lines', lw=2, markersize=5)
+    mpl.rc('legend', fontsize=8, numpoints=1)
+    mpl.rc(('axes', 'xtick', 'ytick'), labelsize=8)
+    mpl.rc('figure', dpi=300, figsize=(3.37, 3.37*(np.sqrt(5)-1)/2))
+
+    print(' Saving structure factor plot to: '
+          f'{plot_name}.png', file=sys.stderr)
+
+    plt.clf()
+
+    plt.plot(
+            SF['G'],
+            SF['S_G'],
+            label='individual twist',
+            marker='x',
+            c='#02a642',
+            mec='k',
+        )
+
+    plt.xlabel('G')
+    plt.ylabel('S(G)')
+    plt.legend(loc='best', ncol=1, handlelength=1.0, handletextpad=0.1)
+    plt.savefig(f'{plot_name}.png', bbox_inches='tight')
 
 
 def plot_SF(sfta_plot: str, difference_plot: str, variance_plot: str,
