@@ -324,8 +324,8 @@ class StructureFactor:
 
         print(' Saving structure factor data to: '
               f'{self.options.basic_analysis}.csv', file=sys.stderr)
-        self.aSF.to_csv(f'{self.options.basic_analysis}.csv', index=False)
-        plot_single_SF(self.options.basic_analysis, self.aSF)
+        self.aSFi[0].to_csv(f'{self.options.basic_analysis}.csv', index=False)
+        plot_single_SF(self.options.basic_analysis, self.aSFi[0])
         self.update_timing_report(msg='Basic analysis data storing/plotting')
 
     def update_timing_report(self, msg: str) -> None:
