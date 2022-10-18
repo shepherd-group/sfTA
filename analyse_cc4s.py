@@ -1352,7 +1352,7 @@ def human_readable_reordering(los: List[str]) -> List[str]:
         string_los = alphabetical_string.split()
         lon_len, los_len = len(string_lon), len(string_los)
         first_character_is_digit = string[0].isdigit()
-        npad = max([len(number) for number in string_lon]) + 2
+        npad = max(max([len(number) for number in string_lon]) + 2, 100)
 
         padded_string = ''
 
