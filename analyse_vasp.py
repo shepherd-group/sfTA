@@ -9,6 +9,7 @@ of files used by the Coupled Cluster 4 Solds (CC4S) code.
 import os
 import sys
 import argparse
+import numpy as np
 import pandas as pd
 
 from warnings import warn
@@ -18,13 +19,13 @@ Array = TypeVar('numpy.ndarray')
 Dataframe = TypeVar('pd.core.frame.DataFrame')
 
 # TODO - WZV
-# Write docstring and comments throughout!
+# Write docstring, comments throughout, and expand functionality!
 
 
 class VASP:
     def __init__(self, clargs: str) -> None:
         self.__dict__.update(parse_command_line_arguments(clargs).__dict__)
-        self.data = [Outcar(output) for output in self.outputs]
+        self.data = [Outcar(output, self.unique) for output in self.outputs]
 
         if self.output == 'csv':
             print(self.data[0].data.to_csv())
@@ -33,29 +34,40 @@ class VASP:
 
 
 class Outcar:
-    def __init__(self, filename: str) -> None:
-        self.filename = self._isfile(filename)
-        self.parseoutcar(self.filename)
+    exclude_terms = [
+            'E-fermi',
+            'exchange ACFDT',
+            'GAMMA',
+            'Pullay stress',
+        ]
+    delta_terms = [
+            'free energy TOTEN eV',
+            'energy without entropy',
+            'energy(sigma->0)',
+        ]
 
-    def parseoutcar(self, filename: str) -> Dataframe:
+    def __init__(self, filename: str, unique: bool) -> None:
+        self.filename = self._isfile(filename)
+        self.parseoutcar(self.filename, unique)
+
+    def parseoutcar(self, filename: str, unique: bool) -> None:
         data = {'Iteration': []}
         n = len(data['Iteration'])
-        exclude_terms = ['E-fermi', 'exchange ACFDT']
-        final_energy = []
+        final_data = {}
 
         with open(filename, 'rt') as stream:
             for line in stream:
                 if 'Iteration' in line:
                     n += 1
                     data['Iteration'].append(n)
-                elif n > 0 and all(et not in line for et in exclude_terms):
+                elif n > 0 and all(t not in line for t in self.exclude_terms):
                     keys, values = self._parseline(line)
 
                     if 'free  energy   TOTEN  =' in line:
-                        final_energy.append(values[0])
+                        final_data[keys[0]] = values[0]
                     elif 'energy  without entropy=' in line:
-                        final_energy.append(values[0])
-                        final_energy.append(values[1])
+                        final_data[keys[0]] = values[0]
+                        final_data[keys[1]] = values[1]
                     elif '=' in line:
                         keys, values = self._parseline(line)
                         for k, v in zip(keys, values):
@@ -64,11 +76,39 @@ class Outcar:
                             else:
                                 data[k].append(v)
 
+        for column in list(data.keys()):
+            if column in final_data:
+                data[column].append(final_data[column])
+            else:
+                if unique:
+                    unique_values = np.unique(data[column])
+                    if unique_values.shape[0] <= 1:
+                        del data[column]
+                        continue
+
+                if 'Iteration' in column:
+                    data[column].append(data[column][-1])
+                    data[column] = np.array(data[column]).astype(int)
+                else:
+                    data[column].append(np.nan)
+
         self.data = pd.DataFrame(data)
-        self.final_energy = final_energy
+
+        for dcolumn in self.delta_terms:
+            nmoved = 0
+            if dcolumn in self.data:
+                nmoved += 1
+                values = self.data[dcolumn].values.flatten()
+                self.data.drop(columns=dcolumn, inplace=True)
+                self.data.insert(nmoved, dcolumn,
+                                 values, allow_duplicates=False)
+                nmoved += 1
+                self.data.insert(nmoved, fr'\Delta {dcolumn}',
+                                 np.diff(data[dcolumn], prepend=np.nan),
+                                 allow_duplicates=False)
 
     @staticmethod
-    def _parseline(line: str) -> Tuple[str, float]:
+    def _parseline(line: str) -> Tuple[List[str], List[float]]:
         keys = [[]]
         values = []
 
@@ -123,6 +163,15 @@ def parse_command_line_arguments(
             type=str,
             dest='output',
             help='Provide one of "csv" or "txt" to change the stdout format.',
+        )
+    parser.add_argument(
+            '-u',
+            '--unique',
+            action='store_true',
+            default=True,
+            dest='unique',
+            help='Drop those columns which do not contain more than one '
+                 'unique data point.',
         )
     parser.add_argument(
             'outputs',
