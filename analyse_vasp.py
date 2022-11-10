@@ -69,7 +69,6 @@ class Outcar:
                         final_data[keys[0]] = values[0]
                         final_data[keys[1]] = values[1]
                     elif '=' in line:
-                        keys, values = self._parseline(line)
                         for k, v in zip(keys, values):
                             if k not in data:
                                 data[k] = [v]
@@ -80,7 +79,7 @@ class Outcar:
             if column in final_data:
                 data[column].append(final_data[column])
             else:
-                if unique:
+                if unique and n > 2:
                     unique_values = np.unique(data[column])
                     if unique_values.shape[0] <= 1:
                         del data[column]
@@ -95,15 +94,11 @@ class Outcar:
         self.data = pd.DataFrame(data)
 
         for dcolumn in self.delta_terms:
-            nmoved = 0
             if dcolumn in self.data:
-                nmoved += 1
                 values = self.data[dcolumn].values.flatten()
                 self.data.drop(columns=dcolumn, inplace=True)
-                self.data.insert(nmoved, dcolumn,
-                                 values, allow_duplicates=False)
-                nmoved += 1
-                self.data.insert(nmoved, fr'\Delta {dcolumn}',
+                self.data.insert(1, dcolumn, values, allow_duplicates=False)
+                self.data.insert(2, fr'\Delta {dcolumn}',
                                  np.diff(data[dcolumn], prepend=np.nan),
                                  allow_duplicates=False)
 
