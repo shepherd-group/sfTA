@@ -93,14 +93,14 @@ class Outcar:
 
         self.data = pd.DataFrame(data)
 
-        for dcolumn in self.delta_terms:
-            if dcolumn in self.data:
-                values = self.data[dcolumn].values.flatten()
-                self.data.drop(columns=dcolumn, inplace=True)
-                self.data.insert(1, dcolumn, values, allow_duplicates=False)
-                self.data.insert(2, fr'\Delta {dcolumn}',
-                                 np.diff(data[dcolumn], prepend=np.nan),
-                                 allow_duplicates=False)
+        for column in self.delta_terms:
+            if column in self.data:
+                values = self.data[column].values.flatten()
+                deltas = np.concatenate([[np.nan], np.diff(values)], axis=0)
+                self.data.drop(columns=column, inplace=True)
+                self.data.insert(1, column, values, allow_duplicates=False)
+                self.data.insert(2, fr'\Delta {column}',
+                                 deltas, allow_duplicates=False)
 
     @staticmethod
     def _parseline(line: str) -> Tuple[List[str], List[float]]:
