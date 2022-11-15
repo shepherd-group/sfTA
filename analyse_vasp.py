@@ -107,6 +107,9 @@ class Outcar:
         keys = [[]]
         values = []
 
+        for digit in range(10):
+            line = line.replace(f'{digit}-', f'{digit} -')
+
         for data in line.replace('=', ' = ').split():
             if '=' == data:
                 keys[-1] = ' '.join(keys[-1])
