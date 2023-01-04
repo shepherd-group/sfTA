@@ -60,6 +60,10 @@ class StructureFactor:
     ispecial : int
         The index corresponding to the special twist angle in the various
         lists.
+    yaml_files : list of str
+        Contains the yaml files corresponding to the directories list.
+        If these are not required, as determined by the "self._parse_yaml()"
+        method than the list is empty.
 
     Methods
     -------
@@ -73,6 +77,9 @@ class StructureFactor:
         Adds a timing check point to the timing report dictionary.
     end_timing_report()
         Close out the timing report and print out to the user.
+    _parse_yaml()
+        Check for arguments which require the yaml files, then find and store
+        the yaml files if required.
     '''
     def __init__(self, clargs: List[str], fmt: str = '%24.16f') -> None:
         ''' Run the general structure factor analysis based on the user
@@ -100,10 +107,19 @@ class StructureFactor:
         self.directories = clean_paths_and_simple_checks(directories)
         self.update_timing_report(msg='Input parsing and directory checks')
 
+        self._parse_yaml()
+        self.update_timing_report(msg='Yaml parsing')
+
+        if self.options.convergence_check:
+            convergence = extract_convergence_from_yaml(self.yaml_files)
+            print(convergence[1].to_string(index=False), file=sys.stderr)
+            if not convergence[0]:
+                raise RuntimeError('Not all calculations have converged!')
+            self.update_timing_report(msg='Convergence checks')
+
         if self.options.mp2 or self.options.mp2_write is not None:
-            yaml_out_files = find_yaml_outs(self.directories)
-            self.mp2_df = extract_mp2_from_yaml(yaml_out_files)
-            self.update_timing_report(msg='Yaml checks and parsing')
+            self.mp2_df = extract_mp2_from_yaml(self.yaml_files)
+            self.update_timing_report(msg='Yaml checks')
 
             if self.options.mp2:
                 mp2_str = self.mp2_df.to_string(index=False, float_format=fmt)
@@ -358,6 +374,22 @@ class StructureFactor:
         report = timing_report.to_string(index=False, float_format='%.2f')
         print('\n Final script timing report: \n', report, file=sys.stderr)
 
+    def _parse_yaml(self) -> None:
+        ''' A private function which checks for conditions that require
+        the yaml files produced by CC4S. If any are met, find the files and
+        store them in our class attribute "yaml_files".
+        '''
+        self.yaml_files = []
+
+        find_yamls = any((
+                self.options.convergence_check,
+                self.options.mp2,
+                self.options.mp2_write is not None,
+            ))
+
+        if find_yamls:
+            self.yaml_files = find_yaml_outs(self.directories)
+
 
 def parse_command_line_arguments(
             arguments: List[str],
@@ -476,6 +508,14 @@ def parse_command_line_arguments(
                         'in a human readable fashion. Note, this has not been '
                         'extensively tested, so use at your own discretion '
                         'and consider checking the sorted results.')
+    parser.add_argument('-c', '--convergence-check', action='store_true',
+                        default=False, dest='convergence_check', help='Checks '
+                        'and reports the convergence boolean within the CC4S '
+                        'yaml output. For a successfully converged CCSD '
+                        'calculation this should be "True". MP2 will walys be '
+                        '"False" as only a single iteration is performed. '
+                        'The report is done to stderr, and the program exits '
+                        'when encountering a "False".')
     parser.add_argument('-k', '--skip-sfta', action='store_true',
                         default=False, dest='skip_sfta', help='Skip all forms '
                         'of sfTA analysis. I.E., overrides related settings!')
@@ -864,6 +904,63 @@ def get_yaml_as_dict(yaml_file: str) -> dict:
         yaml_dict = safe_load(yaml_stream)
 
     return yaml_dict
+
+
+def extract_convergence_from_yaml(
+            yaml_out_files: List[str],
+        ) -> Tuple[bool, Dataframe]:
+    ''' Collect the convergence boolean from the yaml out files and determine
+    if all calculations have converged. If all have converged return "True",
+    otherwise return "False".
+
+    Parameters
+    ----------
+    yaml_out_files : list of strings
+        A list of the yaml log files with energy data.
+
+    Returns
+    -------
+    allconverged : bool
+        "True" if all calculations have converged, otherwise "False".
+    convergedframe : :class:`pandas.DataFrame`
+        A data frame which stores the yaml file name and convergence key
+        correspondence for easy reporting.
+
+    Raises
+    ------
+    RuntimeError
+        When the "convergenceReached" key is missing from a yaml file.
+    '''
+    allconverged = True
+    convergedframe = {'yaml': [], 'converged': []}
+
+    for yamlfile in yaml_out_files:
+        keyhit = False
+        convergedframe['yaml'].append(yamlfile)
+
+        for istep, step in get_yaml_as_dict(yamlfile)['steps'].items():
+            if 'out' not in step:
+                continue
+            if 'convergenceReached' not in step['out']:
+                continue
+
+            keyhit = True
+
+            if not step['out']['convergenceReached']:
+                warn(f'\nUnconverged calculation encountered: {yamlfile}\n',
+                     stacklevel=2)
+                allconverged = False
+                convergedframe['converged'].append('False')
+            else:
+                convergedframe['converged'].append('True')
+
+            break
+
+        if not keyhit:
+            raise RuntimeError('Failed to find convergence key '
+                               f'"convergenceReached" in output: {yamlfile}!')
+
+    return allconverged, pd.DataFrame(convergedframe)
 
 
 def extract_mp2_from_yaml(yaml_out_files: List[str]) -> Dataframe:
