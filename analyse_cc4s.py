@@ -1426,7 +1426,11 @@ def write_individual_twist_average_csv(
         else:
             itwist = np.repeat(index, aSFi['Gx'].shape[0])
 
-        aSFi.insert(0, 'Twist angle Num', itwist)
+        if 'Twist angle Num' in aSFi:
+            aSFi['Twist angle Num'] = itwist
+        else:
+            aSFi.insert(0, 'Twist angle Num', itwist)
+
         individual_averages.append(aSFi)
 
     pd.concat(individual_averages).to_csv(single_write, index=False)
