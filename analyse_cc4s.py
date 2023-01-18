@@ -201,6 +201,13 @@ class StructureFactor:
             write_individual_twist_average_csv(single_output, self.aSFi)
             self.update_timing_report(msg='Individual twist average storing')
 
+        if self.options.single_file_write is not None:
+            write_individual_twist_average_csv(
+                    self.options.single_file_write,
+                    self.aSFi, directories=self.options.directories,
+                )
+            self.update_timing_report(msg='Individual file SF writing.')
+
         plot_names = [
                 self.options.sfta_plot, self.options.difference_plot,
                 self.options.variance_plot,
@@ -421,6 +428,11 @@ def parse_command_line_arguments(
                         help='A file name to write the average individual '
                         'structure factors, i.e. the S(G), V(G) averaged '
                         'over the common G within a single calculation.')
+    parser.add_argument('-ifw', '--individual-file-write', action='store',
+                        default=None, type=str, dest='single_file_write',
+                        help='The same as the "-iw" flag, but the non-unique '
+                        'twist index is replaced with the presumably unique '
+                        'file name.')
     parser.add_argument('-ew', '--mp2-write', action='store', default=None,
                         type=str, dest='mp2_write', help='A file to write the '
                         'MP2 energies to from the individual calculations.')
@@ -536,6 +548,7 @@ def parse_command_line_arguments(
     options.average_write = _ext_check(options.average_write, '.csv')
     options.special_write = _ext_check(options.special_write, '.csv')
     options.single_write = _ext_check(options.single_write, '.csv')
+    options.single_file_write = _ext_check(options.single_file_write, '.csv')
     options.mp2_write = _ext_check(options.mp2_write, '.csv')
     options.residual_write = _ext_check(options.residual_write, '.csv')
     options.legacy_write = _ext_check(options.legacy_write, '.csv')
@@ -1384,7 +1397,9 @@ def write_sfTA_csv(csv_file: str, directories: List[str],
 
 
 def write_individual_twist_average_csv(
-            single_write: str, raw_aSF: List[Dataframe],
+            single_write: str,
+            raw_aSF: List[Dataframe],
+            directories: List[str] = None,
         ) -> None:
     ''' Write out the average of the individual twist angles to a csv file.
 
@@ -1394,14 +1409,23 @@ def write_individual_twist_average_csv(
         A user provided name to save the data to.
     raw_aSF : list of :class:`pandas.DataFrame`
         A list of all the individual average structure factors.
+    directories : list of str, defailt=None
+        If supplied, use the unique directories instead of non-unique
+        index of each offset as the twist angle number.
     '''
     individual_averages = []
 
-    for i, aSFi in enumerate(raw_aSF):
+    if directories is not None:
+        indices = directories
+    else:
+        indices = np.arange(len(raw_aSF), dtype=int) + 1
+
+    for index, aSFi in zip(indices, raw_aSF):
         if 'G' in aSFi.columns:
-            itwist = np.repeat(i+1, np.unique(aSFi['G']).shape[0])
+            itwist = np.repeat(index, np.unique(aSFi['G']).shape[0])
         else:
-            itwist = np.repeat(i+1, aSFi['Gx'].shape[0])
+            itwist = np.repeat(index, aSFi['Gx'].shape[0])
+
         aSFi.insert(0, 'Twist angle Num', itwist)
         individual_averages.append(aSFi)
 
