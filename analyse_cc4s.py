@@ -1109,8 +1109,18 @@ def read_and_generate_Gvector_magnitudes(
     -------
     G : :class:`numpy.ndarray`
         An array of the G magnitudes, and optionally the G vectors.
+
+    Raises
+    ------
+    RuntimeError
+        If any values in the loaded vec{g} array are nan or inf.
     '''
     raw_g_xyz = np.loadtxt(Gvector_file, dtype=np.float64)
+
+    if np.any(np.logical_not(np.isfinite(raw_g_xyz))):
+        raise RuntimeError('Encountered Not a number of infinity in '
+                           'GridVectors.elements, this should not happen!')
+
     N_G = int(raw_g_xyz.shape[0] / 3)
     g_xyz = raw_g_xyz.reshape((N_G, 3))
 
@@ -1136,8 +1146,17 @@ def read_Vg(Coulomb_files: str) -> Array:
     -------
     V_G : :class:`numpy.ndarray`
         An array of the Coulomb potential values for the G magnitudes.
+
+    Raises
+    ------
+    RuntimeError
+        If any values in the loaded V(G) array are nan or inf.
     '''
     V_G = np.loadtxt(Coulomb_files, dtype=np.float64)
+
+    if np.any(np.logical_not(np.isfinite(V_G))):
+        raise RuntimeError('Encountered Not a number of infinity in '
+                           'CoulombPotenial.elements, this should not happen!')
 
     return V_G
 
@@ -1154,8 +1173,17 @@ def read_Sg(S_G_file: str) -> Array:
     -------
     S_G : :class:`numpy.ndarray`
         An array of the Structure Factor values for the G magnitudes.
+
+    Raises
+    ------
+    RuntimeError
+        If any values in the loaded S(G) array are nan or inf.
     '''
     S_G = np.loadtxt(S_G_file, dtype=np.float64)
+
+    if np.any(np.logical_not(np.isfinite(S_G))):
+        raise RuntimeError('Encountered Not a number of infinity in '
+                           'SF.elements, this should not happen!')
 
     return S_G
 
