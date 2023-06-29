@@ -498,10 +498,13 @@ def parse_command_line_arguments(
                         action='append', dest='addp', help='Provide a set of '
                         'structure factor paths with structure factor data '
                         'that will be used to calculate an addition between '
-                        'two structure factors. To define the addition see '
-                        'the addop parameter. The number of paths must match '
-                        'that of the directories provided for analysis. This '
-                        'option must follow the main analysis directories.')
+                        'two (or more!) structure factors. To define the '
+                        'addition see the addop parameter. The number of '
+                        'paths must match that of the directories provided '
+                        'for analysis. This option must follow the main '
+                        'analysis directories. This flag must be used for '
+                        'each separate term in the linear combination to '
+                        '"directories".')
     parser.add_argument('-addop', '--addition-operator', nargs='+',
                         action='append', dest='addop', type=float,
                         help='Used to alter the linear combination of the '
