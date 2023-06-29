@@ -276,25 +276,15 @@ class StructureFactor:
         Raises
         ------
         RuntimeError
+            If there are not an  equal number of addition operators
+            and lists of addition paths.
+        RuntimeError
             If the number of directories and addition directories are not
             the same.
         RuntimeError
             If the G values are not the same between the structure factors
             from the directories and addition directories.
         '''
-        terminate, fac, sk, ek = False, self.options.addop, 'S_G', 'S_G_error'
-
-        print('Calculating the structure factor as a linear combination of:\n'
-              f'    "directories" + {self.options.addop} x "addp"\n'
-              'The post-analysis S(G) and S(G) errors saved in csv files will '
-              'reflect this!\n', file=sys.stderr)
-
-        if len(self.options.directories) != len(self.options.addp):
-            raise RuntimeError('The provided number of directories '
-                               f'(N={len(self.options.directories)}) is '
-                               'not the same as the number of addition '
-                               f'directories (N={len(self.options.addp)})!')
-
         def _SGADD(T1: Dataframe, T2: Dataframe, C: float) -> Array:
             ''' Private function to add two pandas columns with a constant.'''
             return T1.values.flatten() + C*T2.values.flatten()
@@ -304,32 +294,61 @@ class StructureFactor:
             return (T1.values.flatten()**2.0
                     + (C*T2.values.flatten())**2.0)**0.5
 
-        diff = self.read_data_and_analyze(self.options.addp, amsg=' (-addp)')
-        d0, d1, d2 = diff
-
-        if not np.array_equal(d2['G'], self.aSF['G']):
-            terminate = True
-        else:
-            self.aSF[sk] = _SGADD(self.aSF[sk], d2[sk], fac)
-            self.aSF[ek] = _SGPRP(self.aSF[ek], d2[ek], fac)
-
-        for i in range(len(self.aSFi)):
-            if not np.array_equal(d0[i]['G'], self.SFi[i]['G']):
-                terminate = True
-            else:
-                self.SFi[i][sk] = _SGADD(self.SFi[i][sk], d0[i][sk], fac)
-
-            if not np.array_equal(d1[i]['G'], self.aSFi[i]['G']):
-                terminate = True
-            else:
-                self.aSFi[i][sk] = _SGADD(self.aSFi[i][sk], d1[i][sk], fac)
-                self.aSFi[i][ek] = _SGPRP(self.aSFi[i][ek], d1[i][ek], fac)
-
-        if terminate:
+        def _mismatched_G_terminate() -> None:
+            ''' Private function for terminating the script.'''
             raise RuntimeError('Structure factors used in addition '
                                'do not have matching G values!')
-        else:
-            self.update_timing_report(msg='Linear combination of S(G).')
+
+        if len(self.options.addop) != len(self.options.addp):
+            raise RuntimeError('The number of -addop flags does not match '
+                               'the number of -addp flags!')
+
+        expression = '    "directories" '
+        for iop in range(len(self.options.addop)):
+            expression += f'+ {self.options.addop[iop][0]} x "addp[{iop}]" '
+
+        print('Calculating the structure factor as a linear combination of:\n'
+              f'{expression}\n'
+              'The post-analysis S(G) and S(G) errors saved in csv files will '
+              'reflect this!\n', file=sys.stderr)
+
+        dirs_npaths = len(self.options.directories)
+        addp_npaths = [len(p) for p in self.options.addp]
+        if any(dirs_npaths != np for np in addp_npaths):
+            raise RuntimeError('The provided number of directories '
+                               f'(N={dirs_npaths}) is not the same as the '
+                               'the number of addition directories '
+                               f'(N={addp_npaths})!')
+
+        sk, ek = 'S_G', 'S_G_error'
+
+        for iop in range(len(self.options.addop)):
+            C = self.options.addop[iop]
+
+            d0, d1, d2 = self.read_data_and_analyze(
+                self.options.addp[iop],
+                amsg=f' (-addp[{iop}])',
+            )
+
+            if not np.array_equal(d2['G'], self.aSF['G']):
+                _mismatched_G_terminate()
+
+            self.aSF[sk] = _SGADD(self.aSF[sk], d2[sk], C)
+            self.aSF[ek] = _SGPRP(self.aSF[ek], d2[ek], C)
+
+            for i in range(len(self.aSFi)):
+                if not np.array_equal(d0[i]['G'], self.SFi[i]['G']):
+                    _mismatched_G_terminate()
+
+                self.SFi[i][sk] = _SGADD(self.SFi[i][sk], d0[i][sk], C)
+
+                if not np.array_equal(d1[i]['G'], self.aSFi[i]['G']):
+                    _mismatched_G_terminate()
+
+                self.aSFi[i][sk] = _SGADD(self.aSFi[i][sk], d1[i][sk], C)
+                self.aSFi[i][ek] = _SGPRP(self.aSFi[i][ek], d1[i][ek], C)
+
+        self.update_timing_report(msg='Linear combination of S(G).')
 
     def do_basic_analysis(self) -> None:
         ''' Plot a single provided structure factor and store the structure
@@ -476,22 +495,22 @@ def parse_command_line_arguments(
                         'the special twist, everything equal to or above this '
                         'is used and everything below is not.')
     parser.add_argument('-addp', '--addition-paths', nargs='+',
-                        dest='addp', help='Provide a set of structure '
-                        'factor paths with structure factor data that will be '
-                        'used to calculate an addition between two structure '
-                        'factors. To define the addition see the addop '
-                        'parameter. The number of paths must match that of '
-                        'the directories provided for analysis. This option '
-                        'must follow the main analysis directories.')
-    parser.add_argument('-addop', '--addition-operator', default=1.0,
-                        dest='addop', type=float, help='Used to alter the '
-                        'linear combination of the directories structure '
-                        'factors and the additive paths structure factors. '
-                        'For example, one may calculate the binding structure '
-                        'factor for a monolayer and bilayer by providing '
-                        'the bilayer as the directories, the monolayer as the '
-                        'additive path, and the operator as -2.0. The default '
-                        'addition operator is 1.0.')
+                        action='append', dest='addp', help='Provide a set of '
+                        'structure factor paths with structure factor data '
+                        'that will be used to calculate an addition between '
+                        'two structure factors. To define the addition see '
+                        'the addop parameter. The number of paths must match '
+                        'that of the directories provided for analysis. This '
+                        'option must follow the main analysis directories.')
+    parser.add_argument('-addop', '--addition-operator', nargs='+',
+                        action='append', dest='addop', type=float,
+                        help='Used to alter the linear combination of the '
+                        'directories structure factors and the additive paths '
+                        'structure factors. For example, one may calculate '
+                        'the binding structure factor for a monolayer and '
+                        'bilayer by providing the bilayer as the directories, '
+                        'the monolayer as the additive path, and the operator '
+                        'as -2.0.')
     parser.add_argument('-a', '--average', action='store_true', default=False,
                         dest='average', help='Print out the average structure '
                         'factor in a nice table to the standard error output.')
