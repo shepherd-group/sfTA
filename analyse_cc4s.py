@@ -71,6 +71,12 @@ class StructureFactor:
         A data parsing wrapper for structure factor analysis.
     structure_factor_linear_combination()
         A function for combining structure factors in a linear fashion.
+    residual_linear_combination()
+        A function for combining the residuals for structure factors
+        in a linear fashion. This is different than the similarly named
+        routine structure_factor_linear_combination in that the residuals
+        are only combined after individual analysis for a given offset
+        and not on the G/S(G) pairs for a given offset.
     do_basic_analysis()
         A simple wrapper function to save and plot a single structure factor.
     update_timing_report(msg)
@@ -98,10 +104,15 @@ class StructureFactor:
 
         self.options = parse_command_line_arguments(clargs)
 
+        if (self.options.addp is not None) and (self.options.cump is not None):
+            raise ValueError('The addp and cump parameters cannot be '
+                             'used at the same time!')
+
         if self.options.order_directories:
             directories = human_readable_reordering(self.options.directories)
             self.options.directories = directories
             self.options.addp = human_readable_reordering(self.options.addp)
+            self.options.cump = human_readable_reordering(self.options.cump)
 
         directories = self.options.directories
         self.directories = clean_paths_and_simple_checks(directories)
@@ -146,13 +157,21 @@ class StructureFactor:
         if self.options.addp is not None:
             self.structure_factor_linear_combination()
 
-        special_data = find_special_twist_angle(self.aSFi, self.aSF,
-                                                self.options.weighted_residual,
-                                                self.options.anisotropic,
-                                                self.options.upper_bound,
-                                                self.options.lower_bound)
-        self.ispecial, residuals = special_data
+        ispecial, residuals = find_special_twist_angle(
+            self.aSFi,
+            self.aSF,
+            self.options.weighted_residual,
+            self.options.anisotropic,
+            self.options.upper_bound,
+            self.options.lower_bound,
+        )
+
         self.update_timing_report(msg='Special twist analysis')
+
+        if self.options.cump is not None:
+            ispecial, residuals = self.residual_linear_combination(residuals)
+
+        self.ispecial = ispecial
 
         residual_report = self.options.print_residuals
         if self.options.residual_write is not None or residual_report:
@@ -354,6 +373,75 @@ class StructureFactor:
 
         self.update_timing_report(msg='Linear combination of S(G).')
 
+    def residual_linear_combination(self, residuals: List[float]) -> None:
+        ''' Contribute the residuals from additionally provided sets of
+        calculations. This is performed for the final residuals on a given
+        offset rather than the individual G/S(G) pairs. The addition is defined
+        by the cumop parameter. Note the resulting data is not altered
+        as it is in the structure_factor_linear_combination routine.
+
+        Parameters
+        ----------
+        residuals : list of floats
+            The residuals for the provided structure factors.
+
+        Returns
+        ispecial : integer
+            The updated index for the special twist angle.
+        residuals : list of floats
+            The updated residuals used to select the updated special twist.
+
+        Raises
+        ------
+        RuntimeError
+            If there are not an  equal number of addition operators
+            and lists of addition paths.
+        RuntimeError
+            If the number of directories and addition directories are not
+            the same.
+        '''
+        if len(self.options.cumop) != len(self.options.cump):
+            raise RuntimeError('The number of -cumop flags does not match '
+                               'the number of -cump flags!')
+
+        expression = '    "directories" '
+        for iop in range(len(self.options.cumop)):
+            expression += f'+ {self.options.cumop[iop][0]} x "cump[{iop}]" '
+
+        print('Calculating the special twist using a linear combination '
+              f'of residuals:\n{expression}\n', file=sys.stderr)
+
+        dirs_npaths = len(self.options.directories)
+        cump_npaths = [len(p) for p in self.options.cump]
+        if any(dirs_npaths != np for np in cump_npaths):
+            raise RuntimeError('The provided number of directories '
+                               f'(N={dirs_npaths}) is not the same as the '
+                               'the number of addition directories '
+                               f'(N={cump_npaths})!')
+
+        for iop in range(len(self.options.cumop)):
+            C = self.options.cumop[iop][0]
+
+            SFi, aSFi, aSF = self.read_data_and_analyze(
+                self.options.cump[iop],
+                amsg=f' (-cump[{iop}])',
+            )
+
+            ispecial, residuals = find_special_twist_angle(
+                aSFi,
+                aSF,
+                self.options.weighted_residual,
+                self.options.anisotropic,
+                self.options.upper_bound,
+                self.options.lower_bound,
+                additional_residual_terms=residuals,
+                residual_scale_term=C,
+            )
+
+        self.update_timing_report(msg='Cumulative special twist analysis.')
+
+        return ispecial, residuals
+
     def do_basic_analysis(self) -> None:
         ''' Plot a single provided structure factor and store the structure
         factor in a csv file.
@@ -518,6 +606,22 @@ def parse_command_line_arguments(
                         'bilayer by providing the bilayer as the directories, '
                         'the monolayer as the additive path, and the operator '
                         'as -2.0.')
+    parser.add_argument('-cump', '--cumulative-paths', nargs='+',
+                        action='append', dest='cump', help='Provide a set of '
+                        'structure factor paths with structure factor data '
+                        'that will first be analysed then the resulting '
+                        'residual is combined. The same restrictions apply '
+                        'to this keyword as do the addp parameter. To define '
+                        'how the residuals are combined see the cumop '
+                        'parameter. The main difference between this analysis '
+                        'and the addp/addop equivalent is this keyword only '
+                        'considers the residual(s) corresponding to a given '
+                        'offset instead of the individual G/S(G) pairs.')
+    parser.add_argument('-cumop', '--cumulative-operator', nargs='+',
+                        action='append', dest='cumop', type=float,
+                        help='Used to alter the linear combination of the '
+                        'directories structure factor residuals and the '
+                        'cumulative paths structure factor residuals.')
     parser.add_argument('-a', '--average', action='store_true', default=False,
                         dest='average', help='Print out the average structure '
                         'factor in a nice table to the standard error output.')
@@ -1342,6 +1446,8 @@ def find_special_twist_angle(
             anisotropic: bool = False,
             upper_bound: float = None,
             lower_bound: float = None,
+            residual_scale_term: float = 1.0,
+            additional_residual_terms: List[float] = None,
         ) -> Tuple[int, List[float]]:
     ''' Find the twist angle corresponding to the minimum residual
     between the twist averaged S_G and a given S_G.
@@ -1367,6 +1473,13 @@ def find_special_twist_angle(
         Similar to uppwer bound, sets a threshold in G, for which
         the structure factor residual is calculated on. The considered G
         values are only those equal to or greater than this threshold.
+    residual_scale_term : float, default=1.0
+        A scale to apply to the residual calculated given the
+        raw_aSF dataset.
+    additional_residual_terms : list of float
+        A list of terms which are included in the residual calculation.
+        E.G. these could contain the residuals from a set of calculations
+        that should be included with the set of data being analysed here.
 
     Returns
     -------
@@ -1379,11 +1492,21 @@ def find_special_twist_angle(
     Raises
     ------
     RuntimeError
+        If additional residual terms are being provided and the number
+        of terms does not match the number of calculations being analysed.
+    RuntimeError
         If the G vector residual is non-zero
     RuntimeError
         When the average and individual structure factor data sets
         have different G values.
     '''
+    if additional_residual_terms is not None:
+        if len(additional_residual_terms) != len(raw_aSF):
+            raise RuntimeError('The shape of the additional_residual_terms '
+                               f'array ({len(additional_residual_terms)}) '
+                               'does not match that of the number of '
+                               'calculations being analysed ({len(raw_aSF)}!')
+
     residuals = []
 
     def _LUMASK(ARR: Array, G: Array, GL: float, GU: float) -> Array:
@@ -1410,7 +1533,7 @@ def find_special_twist_angle(
     mean_SG = SF['S_G'].values.flatten()
     mean_SG = _LUMASK(mean_SG, mean_G, lower_bound, upper_bound)
 
-    for aSFi in raw_aSF:
+    for icalc, aSFi in enumerate(raw_aSF):
         G = aSFi['G'].values.flatten()
         SG = aSFi['S_G'].values.flatten()
         SG = _LUMASK(SG, G, lower_bound, upper_bound)
@@ -1429,7 +1552,12 @@ def find_special_twist_angle(
         if use_weighted_residuals:
             delta_S_G /= np.power(np.abs(mean_G), 2)
 
-        residuals.append(delta_S_G.sum())
+        residual = residual_scale_term*delta_S_G.sum()
+
+        if additional_residual_terms is not None:
+            residual += additional_residual_terms[icalc]
+
+        residuals.append(residual)
 
         if not anisotropic:
             if not np.array_equal(G, mean_G):
